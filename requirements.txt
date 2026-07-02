@@ -45,3 +45,6 @@ loguru
 # Testing
 pytest
 pytest-asyncio
+
+#Generate veterinary and agricultural officers
+Faker
