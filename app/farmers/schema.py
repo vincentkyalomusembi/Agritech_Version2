@@ -35,6 +35,18 @@ class FarmerCreate(BaseModel):
     county_id: UUID
 
 
+class FarmerLogin(BaseModel):
+    """
+    Data required for login.
+    """
+
+    pin: str = Field(
+        ...,
+        min_length=4,
+        max_length=10,
+    )
+
+
 class FarmerUpdate(BaseModel):
     """
     Fields a farmer can update.
@@ -53,6 +65,33 @@ class FarmerUpdate(BaseModel):
     )
 
     county_id: UUID | None = None
+
+
+class ChangePinRequest(BaseModel):
+    """
+    Data required to change a PIN.
+    """
+
+    current_pin: str = Field(
+        ...,
+        min_length=4,
+        max_length=10,
+    )
+
+    new_pin: str = Field(
+        ...,
+        min_length=4,
+        max_length=10,
+    )
+
+
+class TokenResponse(BaseModel):
+    """
+    JWT returned after login.
+    """
+
+    access_token: str
+    token_type: str = "bearer"
 
 
 class FarmerResponse(BaseModel):
