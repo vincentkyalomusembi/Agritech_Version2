@@ -1,5 +1,3 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 
 # Auth & Farmers (Member 1)
@@ -11,25 +9,10 @@ from app.market_prices.routes import router as market_prices_router
 from app.advisory.routes import router as advisory_router
 from app.products.routes import router as products_router
 
-# Scheduler (Member 2 — KAMIS daily job)
-from app.tasks.schedular import start_scheduler, stop_scheduler
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    App startup/shutdown lifecycle.
-    Starts APScheduler on boot, shuts it down on exit.
-    """
-    start_scheduler()
-    yield
-    stop_scheduler()
-
 
 app = FastAPI(
     title="Agritech AI API",
     version="2.0.0",
-    lifespan=lifespan,
 )
 
 # ------------------------------------------------------------------ #
@@ -69,5 +52,4 @@ def root():
     """
     return {
         "message": "Agritech AI API is running.",
-        "version": "2.0.0",
     }
