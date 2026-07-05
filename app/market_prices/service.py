@@ -15,10 +15,13 @@ from app.market_prices.model import MarketPrice
 from app.market_prices.repository import MarketPriceRepository
 from app.market_prices.schema import MarketPriceCreate
 
-# KAMIS integration
-from app.integrations.kamis.scraper import fetch_kamis_html
-from app.integrations.kamis.parser import parse_kamis_html
-from app.integrations.kamis.utils import normalise_crop_name, normalise_county_name
+# KAMIS scraper — lives inside market_prices module
+from app.market_prices.scraper import (
+    fetch_kamis_html,
+    parse_kamis_html,
+    normalise_crop_name,
+    normalise_county_name,
+)
 
 # Lookup models
 from app.crops.model import Crop
