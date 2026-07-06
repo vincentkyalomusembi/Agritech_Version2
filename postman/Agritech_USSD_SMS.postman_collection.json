@@ -1,0 +1,193 @@
+{
+  "info": {
+    "name": "Agritech USSD & SMS",
+    "description": "Africa's Talking USSD/SMS callbacks and health check for AgriTech AI API v2.0.0.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    }
+  ],
+  "item": [
+    {
+      "name": "GET /health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/health",
+        "description": "Application health check including database connectivity and Africa's Talking configuration status."
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"status\": \"ok\",\n  \"version\": \"2.0.0\",\n  \"database\": \"ok\",\n  \"africas_talking_configured\": false,\n  \"environment\": {\n    \"database_url_set\": true,\n    \"secret_key_set\": true\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "POST /ussd - Main Menu",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "sessionId", "value": "ATUid_test_session_001", "description": "Africa's Talking session ID" },
+            { "key": "serviceCode", "value": "*384*123#", "description": "USSD short code" },
+            { "key": "phoneNumber", "value": "+254712345678", "description": "Subscriber phone number" },
+            { "key": "text", "value": "", "description": "Empty on first dial — shows main menu" }
+          ]
+        },
+        "url": "{{base_url}}/ussd",
+        "description": "Initial USSD callback. Empty `text` returns the CON main menu."
+      },
+      "response": [
+        {
+          "name": "200 CON Main Menu",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "plain",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "text/plain; charset=utf-8"
+            }
+          ],
+          "body": "CON Welcome to AgriTech AI\n1. Crop Recommendation\n2. Livestock Recommendation\n3. Expert Request\n0. Exit"
+        }
+      ]
+    },
+    {
+      "name": "POST /ussd - Unregistered Phone",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "sessionId", "value": "ATUid_test_session_002" },
+            { "key": "serviceCode", "value": "*384*123#" },
+            { "key": "phoneNumber", "value": "+254799999999" },
+            { "key": "text", "value": "1*1234", "description": "Crop option + PIN for unregistered number" }
+          ]
+        },
+        "url": "{{base_url}}/ussd",
+        "description": "USSD flow for a phone number not registered in the farmers table."
+      },
+      "response": [
+        {
+          "name": "200 END Not Registered",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "plain",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "text/plain; charset=utf-8"
+            }
+          ],
+          "body": "END Phone number not registered. Please register with an extension officer."
+        }
+      ]
+    },
+    {
+      "name": "POST /sms - HELP Command",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "from", "value": "+254712345678", "description": "Sender phone number" },
+            { "key": "to", "value": "AgriTech", "description": "Short code or sender ID" },
+            { "key": "text", "value": "HELP", "description": "Show available SMS commands" },
+            { "key": "date", "value": "2026-07-06 12:00:00" },
+            { "key": "id", "value": "ATXid_test_sms_001" }
+          ]
+        },
+        "url": "{{base_url}}/sms",
+        "description": "Inbound SMS HELP command from Africa's Talking."
+      },
+      "response": [
+        {
+          "name": "200 Processed",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"message\": \"AgriTech AI commands:\\nHELP - Show this message\\nSTATUS - Check your account status\\nDial *384*123# for USSD services.\",\n  \"status\": \"processed\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "POST /sms - STATUS Command",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "from", "value": "+254799999999" },
+            { "key": "to", "value": "AgriTech" },
+            { "key": "text", "value": "STATUS" },
+            { "key": "date", "value": "2026-07-06 12:00:00" },
+            { "key": "id", "value": "ATXid_test_sms_002" }
+          ]
+        },
+        "url": "{{base_url}}/sms",
+        "description": "Inbound SMS STATUS command for an unregistered phone number."
+      },
+      "response": [
+        {
+          "name": "200 Processed Unregistered",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"message\": \"Your phone is not registered. Please register with an extension officer.\",\n  \"status\": \"processed\"\n}"
+        }
+      ]
+    }
+  ]
+}
