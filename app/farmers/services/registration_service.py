@@ -18,7 +18,7 @@ class RegistrationService:
     def __init__(self, db: Session):
         self.repository = FarmerRepository(db)
 
-    def register_farmer(
+    def register(
         self,
         farmer_data: FarmerCreate,
     ) -> Farmer:
