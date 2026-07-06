@@ -4,6 +4,11 @@ from fastapi import FastAPI
 from app.auth.router import router as auth_router
 from app.farmers.routes import router as farmers_router
 
+# USSD, SMS & Health (Member 4)
+from app.health.routes import router as health_router
+from app.sms.routes import router as sms_router
+from app.ussd.routes import router as ussd_router
+
 # Experts, Expert Requests & Notifications (Member 3)
 from app.experts.routes import router as experts_router
 from app.expert_requests.routes import router as expert_requests_router
@@ -21,7 +26,7 @@ app = FastAPI(
 )
 
 # ------------------------------------------------------------------ #
-#  Authentication                                                      #
+#  Authentication (Member 1)                                           #
 # ------------------------------------------------------------------ #
 app.include_router(
     auth_router,
@@ -30,9 +35,16 @@ app.include_router(
 )
 
 # ------------------------------------------------------------------ #
-#  Farmers                                                             #
+#  Farmers (Member 1)                                                  #
 # ------------------------------------------------------------------ #
 app.include_router(farmers_router)
+
+# ------------------------------------------------------------------ #
+#  USSD & SMS (Member 4)                                               #
+# ------------------------------------------------------------------ #
+app.include_router(ussd_router)
+app.include_router(sms_router)
+app.include_router(health_router)
 
 # ------------------------------------------------------------------ #
 #  Experts & Notifications (Member 3)                                  #
@@ -60,7 +72,7 @@ app.include_router(products_router)
 @app.get("/", tags=["Health"])
 def root():
     """
-    Health check endpoint.
+    Root endpoint.
     """
     return {
         "message": "Agritech AI API is running.",
