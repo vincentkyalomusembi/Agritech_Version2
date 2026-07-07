@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import app.models
 
 # Auth & Farmers (Member 1)
 from app.auth.router import router as auth_router
@@ -19,6 +20,10 @@ from app.market_prices.routes import router as market_prices_router
 from app.advisory.routes import router as advisory_router
 from app.products.routes import router as products_router
 
+# Exception Handlers
+from app.core.exception_handlers import (
+    register_exception_handlers,
+)
 
 app = FastAPI(
     title="Agritech AI API",
@@ -77,3 +82,6 @@ def root():
     return {
         "message": "Agritech AI API is running.",
     }
+
+# Register global exception handlers.
+register_exception_handlers(app)
