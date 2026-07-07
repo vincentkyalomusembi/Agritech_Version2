@@ -5,6 +5,7 @@ from sqlalchemy import (
     Float,
     DateTime,
     ForeignKey,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -15,6 +16,15 @@ from app.database.base import Base
 
 class FarmerCrop(Base):
     __tablename__ = "farmer_crops"
+
+    # Prevent a farmer from registering the same crop more than once.
+    __table_args__ = (
+        UniqueConstraint(
+            "farmer_id",
+            "crop_id",
+            name="uq_farmer_crop",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
