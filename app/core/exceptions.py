@@ -9,6 +9,8 @@ from app.farmers.exceptions import (
     InactiveFarmerError,
 )
 
+from app.core.exception_handlers import register_exception_handlers
+
 
 def register_exception_handlers(app: FastAPI):
 

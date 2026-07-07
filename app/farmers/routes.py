@@ -1,9 +1,9 @@
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import get_current_farmer
 from app.database.sessions import get_db
+from app.farmers.model import Farmer
 
 from app.farmers.schema import (
     FarmerCreate,
@@ -78,11 +78,11 @@ def login_farmer(
 
 
 @router.get(
-    "/{farmer_id}",
+    "/me",
     response_model=FarmerResponse,
 )
 def get_farmer(
-    farmer_id: UUID,
+    current_farmer: Farmer = Depends(get_current_farmer),
     db: Session = Depends(get_db),
 ):
     """
@@ -91,16 +91,16 @@ def get_farmer(
 
     service = ProfileService(db)
 
-    return service.get_profile(farmer_id)
+    return service.get_profile(current_farmer.id)
 
 
 @router.put(
-    "/{farmer_id}",
+    "/me",
     response_model=FarmerResponse,
 )
 def update_farmer(
-    farmer_id: UUID,
     farmer: FarmerUpdate,
+    current_farmer: Farmer = Depends(get_current_farmer),
     db: Session = Depends(get_db),
 ):
     """
@@ -110,17 +110,17 @@ def update_farmer(
     service = ProfileService(db)
 
     return service.update_profile(
-        farmer_id,
+        current_farmer.id,
         farmer,
     )
 
 
 @router.put(
-    "/{farmer_id}/change-pin",
+    "/change-pin",
 )
 def change_pin(
-    farmer_id: UUID,
     request: ChangePinRequest,
+    current_farmer: Farmer = Depends(get_current_farmer),
     db: Session = Depends(get_db),
 ):
     """
@@ -130,7 +130,7 @@ def change_pin(
     service = ResetPinService(db)
 
     service.change_pin(
-        farmer_id,
+        current_farmer.id,
         request.current_pin,
         request.new_pin,
     )
@@ -141,10 +141,10 @@ def change_pin(
 
 
 @router.delete(
-    "/{farmer_id}",
+    "/me",
 )
 def delete_farmer(
-    farmer_id: UUID,
+    current_farmer: Farmer = Depends(get_current_farmer),
     db: Session = Depends(get_db),
 ):
     """
@@ -153,7 +153,7 @@ def delete_farmer(
 
     service = ProfileService(db)
 
-    service.delete_profile(farmer_id)
+    service.delete_profile(current_farmer.id)
 
     return {
         "message": "Farmer deleted successfully."
@@ -173,4 +173,4 @@ def get_all_farmers(
 
     service = ProfileService(db)
 
-    return service.get_all_profiles()
+    return service.list_farmers()
