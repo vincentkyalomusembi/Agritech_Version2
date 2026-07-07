@@ -1,6 +1,6 @@
 """
-Production-readiness audit test matrix for Member 3 modules.
-Run: python -m audit.test_member3_audit
+Production-readiness audit test matrix for experts, requests, and notifications.
+Run: python -m audit.test_production_audit
 """
 from __future__ import annotations
 

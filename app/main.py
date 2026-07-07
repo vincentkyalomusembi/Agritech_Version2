@@ -1,20 +1,20 @@
 from fastapi import FastAPI
 
-# Auth & Farmers (Member 1)
+# Auth & Farmers
 from app.auth.router import router as auth_router
 from app.farmers.routes import router as farmers_router
 
-# USSD, SMS & Health (Member 4)
+# USSD, SMS & Health
 from app.health.routes import router as health_router
 from app.sms.routes import router as sms_router
 from app.ussd.routes import router as ussd_router
 
-# Experts, Expert Requests & Notifications (Member 3)
+# Experts, Expert Requests & Notifications
 from app.experts.routes import router as experts_router
 from app.expert_requests.routes import router as expert_requests_router
 from app.notifications.routes import router as notifications_router
 
-# Market Prices, Advisory & Products (Member 2)
+# Market Prices, Advisory & Products
 from app.market_prices.routes import router as market_prices_router
 from app.advisory.routes import router as advisory_router
 from app.products.routes import router as products_router
@@ -26,7 +26,7 @@ app = FastAPI(
 )
 
 # ------------------------------------------------------------------ #
-#  Authentication (Member 1)                                           #
+#  Authentication                                                      #
 # ------------------------------------------------------------------ #
 app.include_router(
     auth_router,
@@ -35,36 +35,36 @@ app.include_router(
 )
 
 # ------------------------------------------------------------------ #
-#  Farmers (Member 1)                                                  #
+#  Farmers                                                             #
 # ------------------------------------------------------------------ #
 app.include_router(farmers_router)
 
 # ------------------------------------------------------------------ #
-#  USSD & SMS (Member 4)                                               #
+#  USSD & SMS                                                          #
 # ------------------------------------------------------------------ #
 app.include_router(ussd_router)
 app.include_router(sms_router)
 app.include_router(health_router)
 
 # ------------------------------------------------------------------ #
-#  Experts & Notifications (Member 3)                                  #
+#  Experts & Notifications                                             #
 # ------------------------------------------------------------------ #
 app.include_router(experts_router)
 app.include_router(expert_requests_router)
 app.include_router(notifications_router)
 
 # ------------------------------------------------------------------ #
-#  Market Prices (Member 2)                                            #
+#  Market Prices                                                       #
 # ------------------------------------------------------------------ #
 app.include_router(market_prices_router)
 
 # ------------------------------------------------------------------ #
-#  Advisory (Member 2)                                                 #
+#  Advisory                                                            #
 # ------------------------------------------------------------------ #
 app.include_router(advisory_router)
 
 # ------------------------------------------------------------------ #
-#  Products (Member 2)                                                 #
+#  Products                                                            #
 # ------------------------------------------------------------------ #
 app.include_router(products_router)
 

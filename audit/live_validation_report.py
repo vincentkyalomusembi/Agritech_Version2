@@ -1,5 +1,5 @@
 """
-Live validation harness for Member 3.
+Live validation harness for experts, expert requests, and notifications.
 
 Proves:
   1. Real HTTP against running uvicorn (not static inspection)
@@ -283,7 +283,7 @@ def validate_http_notifications(farmer_id: str) -> dict:
 
 
 def main() -> None:
-    print("MEMBER 3 LIVE VALIDATION REPORT")
+    print("LIVE VALIDATION REPORT")
     print(f"Target API: {BASE_URL}")
     print(f"Database host: {engine.url.host}")
     print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")

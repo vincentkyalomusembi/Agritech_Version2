@@ -66,7 +66,7 @@ class NotificationService:
         """
         Mark a notification as sent.
 
-        Intended for Member 4's Africa's Talking SMS dispatch flow.
+        Used by the Africa's Talking SMS dispatch flow.
         """
 
         notification = self.repository.get_by_id(notification_id)
