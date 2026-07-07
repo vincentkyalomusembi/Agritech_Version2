@@ -8,7 +8,7 @@ from app.database.sessions import get_db
 from app.farmers.model import Farmer
 
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/auth/login"
+    tokenUrl="/auth/login",
 )
 
 
@@ -17,7 +17,7 @@ def get_current_farmer(
     db: Session = Depends(get_db),
 ) -> Farmer:
     """
-    Return the authenticated farmer.
+    Retrieve the currently authenticated farmer.
     """
 
     credentials_exception = HTTPException(
@@ -27,7 +27,8 @@ def get_current_farmer(
 
     try:
         payload = decode_access_token(token)
-        farmer_id = payload.get("farmer_id")
+
+        farmer_id = payload.get("sub") or payload.get("farmer_id")
 
         if farmer_id is None:
             raise credentials_exception

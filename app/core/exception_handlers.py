@@ -11,9 +11,9 @@ from app.farmers.exceptions import (
 
 
 def register_exception_handlers(app: FastAPI):
-
+    
     #Register all custom exception handlers.
-
+    
 
     @app.exception_handler(FarmerNotFoundError)
     async def farmer_not_found_handler(
