@@ -28,7 +28,7 @@ def get_current_farmer(
     try:
         payload = decode_access_token(token)
 
-        farmer_id = payload.get("farmer_id")
+        farmer_id = payload.get("sub") or payload.get("farmer_id")
 
         if farmer_id is None:
             raise credentials_exception
