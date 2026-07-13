@@ -1,10 +1,3 @@
-"""
-Market Prices — Repository
-==========================
-All database read/write operations for MarketPrice.
-Routes and services call this layer; no raw SQL elsewhere.
-"""
-
 from datetime import date
 from uuid import UUID
 
@@ -18,10 +11,6 @@ class MarketPriceRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    # ------------------------------------------------------------------ #
-    #  Writes                                                              #
-    # ------------------------------------------------------------------ #
-
     def create(self, price: MarketPrice) -> MarketPrice:
         self.db.add(price)
         self.db.commit()
@@ -29,19 +18,12 @@ class MarketPriceRepository:
         return price
 
     def bulk_create(self, prices: list[MarketPrice]) -> int:
-        """
-        Insert many MarketPrice rows at once.
-        Returns the number of rows inserted.
-        """
+        """Insert multiple price rows at once. Returns the number of rows inserted."""
         self.db.add_all(prices)
         self.db.commit()
         return len(prices)
 
-    # ------------------------------------------------------------------ #
-    #  Reads                                                               #
-    # ------------------------------------------------------------------ #
-
-    def get_all(self, limit: int = 200, offset: int = 0) -> list[MarketPrice]:
+    def get_all(self, limit: int = 200, offset: int = 0):
         return (
             self.db.query(MarketPrice)
             .order_by(MarketPrice.price_date.desc())
@@ -50,11 +32,7 @@ class MarketPriceRepository:
             .all()
         )
 
-    def get_by_county(
-        self,
-        county_id: UUID,
-        limit: int = 100,
-    ) -> list[MarketPrice]:
+    def get_by_county(self, county_id: UUID, limit: int = 100):
         return (
             self.db.query(MarketPrice)
             .filter(MarketPrice.county_id == county_id)
@@ -63,11 +41,7 @@ class MarketPriceRepository:
             .all()
         )
 
-    def get_by_crop(
-        self,
-        crop_id: UUID,
-        limit: int = 100,
-    ) -> list[MarketPrice]:
+    def get_by_crop(self, crop_id: UUID, limit: int = 100):
         return (
             self.db.query(MarketPrice)
             .filter(MarketPrice.crop_id == crop_id)
@@ -76,12 +50,7 @@ class MarketPriceRepository:
             .all()
         )
 
-    def get_by_county_and_crop(
-        self,
-        county_id: UUID,
-        crop_id: UUID,
-        limit: int = 50,
-    ) -> list[MarketPrice]:
+    def get_by_county_and_crop(self, county_id: UUID, crop_id: UUID, limit: int = 50):
         return (
             self.db.query(MarketPrice)
             .filter(
@@ -100,9 +69,7 @@ class MarketPriceRepository:
         market_name: str,
         price_date: date,
     ) -> bool:
-        """
-        Prevent duplicate inserts for the same market/crop/date combination.
-        """
+        """Check if a price record already exists for this market/crop/date combo."""
         return (
             self.db.query(MarketPrice)
             .filter(

@@ -1,16 +1,14 @@
 """
 KAMIS Scraper
-=============
-Fetches, parses, and normalises crop market price data from the
-Kenya Agricultural Market Information System (KAMIS).
 
-This module lives inside market_prices/ because KAMIS is the sole
-data source for market prices and belongs to this domain.
+Fetches and parses daily crop market price data from the Kenya Agricultural
+Market Information System (KAMIS). This module is the sole data source for
+market prices and belongs inside market_prices/.
 
-Responsibilities:
-  1. HTTP fetch — download the daily price page HTML
-  2. HTML parse — extract price rows from the table
-  3. Normalise — map raw KAMIS names to canonical DB Crop/County names
+Three responsibilities:
+  - HTTP fetch: download the daily price page HTML
+  - HTML parse: extract price rows from the table
+  - Normalise: map raw KAMIS names to canonical DB Crop/County names
 """
 
 import httpx
@@ -20,10 +18,6 @@ from typing import Any
 from bs4 import BeautifulSoup
 from loguru import logger
 
-
-# ------------------------------------------------------------------ #
-#  Constants                                                           #
-# ------------------------------------------------------------------ #
 
 KAMIS_URL = "https://www.kamis.or.ke/customer/reference/daynprice.php"
 
@@ -39,10 +33,7 @@ HEADERS = {
 
 TIMEOUT = 30  # seconds
 
-# ------------------------------------------------------------------ #
-#  Commodity → Crop name map                                           #
-# ------------------------------------------------------------------ #
-
+# Maps KAMIS commodity strings to the canonical Crop.name stored in the DB
 CROP_NAME_MAP: dict[str, str] = {
     "maize": "Maize",
     "white maize": "Maize",
@@ -78,10 +69,7 @@ CROP_NAME_MAP: dict[str, str] = {
     "passion fruits": "Passion Fruits",
 }
 
-# ------------------------------------------------------------------ #
-#  County/market → County name map                                     #
-# ------------------------------------------------------------------ #
-
+# Maps KAMIS county/market strings to the canonical County.name in the DB
 COUNTY_NAME_MAP: dict[str, str] = {
     "nairobi": "Nairobi",
     "mombasa": "Mombasa",
@@ -136,26 +124,13 @@ COUNTY_NAME_MAP: dict[str, str] = {
 }
 
 
-# ------------------------------------------------------------------ #
-#  1. Fetch                                                            #
-# ------------------------------------------------------------------ #
-
 def fetch_kamis_html() -> str | None:
-    """
-    Download the raw HTML from the KAMIS daily price page.
-
-    Returns
-    -------
-    str | None
-        HTML string on success, None on any network/HTTP failure.
-    """
+    """Download the raw HTML from the KAMIS daily price page. Returns None on failure."""
     try:
         logger.info(f"Fetching KAMIS data from {KAMIS_URL}")
-
         with httpx.Client(headers=HEADERS, timeout=TIMEOUT, follow_redirects=True) as client:
             response = client.get(KAMIS_URL)
             response.raise_for_status()
-
         logger.success(f"KAMIS fetch OK — {len(response.text)} chars")
         return response.text
 
@@ -169,32 +144,18 @@ def fetch_kamis_html() -> str | None:
     return None
 
 
-# ------------------------------------------------------------------ #
-#  2. Parse                                                            #
-# ------------------------------------------------------------------ #
-
 def parse_kamis_html(html: str) -> list[dict[str, Any]]:
     """
-    Parse the KAMIS HTML table and return a list of raw price records.
+    Parse the KAMIS HTML price table and return a list of raw price records.
 
-    Each record:
-        {
-            "commodity": str,
-            "market": str,
-            "county": str,
-            "minimum_price": float,
-            "maximum_price": float,
-            "average_price": float,
-            "unit": str,
-            "price_date": date,
-        }
+    Each record has: commodity, market, county, minimum_price, maximum_price,
+    average_price, unit, price_date.
     """
     records: list[dict[str, Any]] = []
 
     try:
         soup = BeautifulSoup(html, "lxml")
 
-        # Find the price table
         table = soup.find("table", {"class": "table"})
         if not table:
             for t in soup.find_all("table"):
@@ -208,7 +169,7 @@ def parse_kamis_html(html: str) -> list[dict[str, Any]]:
 
         today = date.today()
 
-        for row in table.find_all("tr")[1:]:  # skip header
+        for row in table.find_all("tr")[1:]:  # skip the header row
             cells = row.find_all("td")
             if len(cells) < 5:
                 continue
@@ -229,20 +190,19 @@ def parse_kamis_html(html: str) -> list[dict[str, Any]]:
 
 def _parse_row(cells: list, fallback_date: date) -> dict[str, Any] | None:
     """
-    Extract one price row.
+    Extract one price row from KAMIS.
 
-    KAMIS column order (typical):
-    0: Commodity | 1: Market | 2: County | 3: Min Price | 4: Max Price | [5: Date]
+    Column order: 0=Commodity, 1=Market, 2=County, 3=Min Price, 4=Max Price, [5=Date]
     """
     def clean(text: str) -> str:
         return text.strip().replace(",", "")
 
-    commodity  = clean(cells[0].get_text())
-    market     = clean(cells[1].get_text())
-    county     = clean(cells[2].get_text())
-    min_raw    = clean(cells[3].get_text())
-    max_raw    = clean(cells[4].get_text())
-    date_raw   = clean(cells[5].get_text()) if len(cells) > 5 else ""
+    commodity = clean(cells[0].get_text())
+    market    = clean(cells[1].get_text())
+    county    = clean(cells[2].get_text())
+    min_raw   = clean(cells[3].get_text())
+    max_raw   = clean(cells[4].get_text())
+    date_raw  = clean(cells[5].get_text()) if len(cells) > 5 else ""
 
     if not commodity or not market:
         return None
@@ -256,8 +216,8 @@ def _parse_row(cells: list, fallback_date: date) -> dict[str, Any] | None:
     if min_price <= 0 and max_price <= 0:
         return None
 
-    avg_price   = round((min_price + max_price) / 2, 2)
-    price_date  = _parse_date(date_raw) or fallback_date
+    avg_price  = round((min_price + max_price) / 2, 2)
+    price_date = _parse_date(date_raw) or fallback_date
 
     return {
         "commodity":     commodity,
@@ -280,12 +240,8 @@ def _parse_date(raw: str) -> date | None:
     return None
 
 
-# ------------------------------------------------------------------ #
-#  3. Normalise                                                        #
-# ------------------------------------------------------------------ #
-
 def normalise_crop_name(raw: str) -> str | None:
-    """Map a KAMIS commodity string → canonical Crop.name in DB."""
+    """Map a KAMIS commodity string to the canonical Crop.name in the DB."""
     key = raw.strip().lower()
     result = CROP_NAME_MAP.get(key)
     if not result:
@@ -294,11 +250,11 @@ def normalise_crop_name(raw: str) -> str | None:
 
 
 def normalise_county_name(raw: str) -> str | None:
-    """Map a KAMIS county/market string → canonical County.name in DB."""
+    """Map a KAMIS county or market string to the canonical County.name in the DB."""
     key = raw.strip().lower()
     if key in COUNTY_NAME_MAP:
         return COUNTY_NAME_MAP[key]
-    # Partial match (market names sometimes embed the county)
+    # market names sometimes embed the county name, so try a partial match
     for k, v in COUNTY_NAME_MAP.items():
         if k in key:
             return v

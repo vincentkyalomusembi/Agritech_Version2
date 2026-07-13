@@ -1,7 +1,3 @@
-"""
-Products — Pydantic Schemas
-"""
-
 from datetime import datetime
 from uuid import UUID
 
@@ -16,7 +12,7 @@ class ProductCreate(BaseModel):
     description: str | None = None
     manufacturer: str | None = None
     is_active: bool = True
-    target_type: str = Field(..., max_length=20)  # e.g. "crop" or "livestock"
+    target_type: str = Field(..., max_length=20)  # "crop" or "livestock"
 
 
 class ProductUpdate(BaseModel):

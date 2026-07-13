@@ -1,9 +1,3 @@
-"""
-Products — Repository
-======================
-Database operations for AgriculturalProduct.
-"""
-
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -23,26 +17,19 @@ class ProductRepository:
         return product
 
     def get_by_id(self, product_id: UUID) -> AgriculturalProduct | None:
-        return self.db.query(AgriculturalProduct).filter(
-            AgriculturalProduct.id == product_id
-        ).first()
+        return (
+            self.db.query(AgriculturalProduct)
+            .filter(AgriculturalProduct.id == product_id)
+            .first()
+        )
 
-    def get_all(
-        self,
-        active_only: bool = True,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[AgriculturalProduct]:
+    def get_all(self, active_only: bool = True, limit: int = 100, offset: int = 0):
         query = self.db.query(AgriculturalProduct)
         if active_only:
             query = query.filter(AgriculturalProduct.is_active == True)
         return query.order_by(AgriculturalProduct.product_name).offset(offset).limit(limit).all()
 
-    def get_by_category(
-        self,
-        category: ProductCategory,
-        active_only: bool = True,
-    ) -> list[AgriculturalProduct]:
+    def get_by_category(self, category: ProductCategory, active_only: bool = True):
         query = self.db.query(AgriculturalProduct).filter(
             AgriculturalProduct.category == category
         )

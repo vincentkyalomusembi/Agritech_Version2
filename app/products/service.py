@@ -1,7 +1,3 @@
-"""
-Products — Service Layer
-"""
-
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -29,12 +25,7 @@ class ProductService:
         )
         return self.repo.create(product)
 
-    def get_all(
-        self,
-        active_only: bool = True,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[AgriculturalProduct]:
+    def get_all(self, active_only: bool = True, limit: int = 100, offset: int = 0):
         return self.repo.get_all(active_only=active_only, limit=limit, offset=offset)
 
     def get_by_id(self, product_id: UUID) -> AgriculturalProduct:
@@ -46,7 +37,7 @@ class ProductService:
             )
         return product
 
-    def get_by_category(self, category: ProductCategory) -> list[AgriculturalProduct]:
+    def get_by_category(self, category: ProductCategory):
         return self.repo.get_by_category(category)
 
     def update(self, product_id: UUID, data: ProductUpdate) -> AgriculturalProduct:
