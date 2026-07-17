@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.farmer_livestock.model import FarmerLivestock
+from app.farmer_livestocks.model import FarmerLivestock
 
 
 class FarmerLivestockRepository:

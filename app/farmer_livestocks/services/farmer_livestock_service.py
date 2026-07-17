@@ -2,15 +2,15 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.farmer_livestock.exceptions import (
+from app.farmer_livestocks.exceptions import (
     FarmerLivestockNotFoundError,
     LivestockAlreadyExistsError,
 )
-from app.farmer_livestock.model import FarmerLivestock
-from app.farmer_livestock.repository import (
+from app.farmer_livestocks.model import FarmerLivestock
+from app.farmer_livestocks.repository import (
     FarmerLivestockRepository,
 )
-from app.farmer_livestock.schema import (
+from app.farmer_livestocks.schema import (
     FarmerLivestockCreate,
 )
 
