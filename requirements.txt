@@ -19,6 +19,7 @@ httpx
 # AI
 google-generativeai
 openai
+google-genai
 
 # Google Earth Engine
 earthengine-api
