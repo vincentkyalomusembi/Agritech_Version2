@@ -25,6 +25,12 @@ from app.core.exception_handlers import (
     register_exception_handlers,
 )
 
+# Farmer Crops
+from app.farmer_crops.routes import router as farmer_crops_router
+
+# Farmer Livestocks
+from app.farmer_livestocks.routes import router as farmer_livestocks_router
+
 app = FastAPI(
     title="Agritech AI API",
     version="2.0.0",
@@ -62,6 +68,16 @@ app.include_router(notifications_router)
 #  Market Prices (Member 2)                                            #
 # ------------------------------------------------------------------ #
 app.include_router(market_prices_router)
+
+# ------------------------------------------------------------------ #
+#  Farmer Crops (Member 1)                                              #
+# ------------------------------------------------------------------ #
+app.include_router(farmer_crops_router)
+
+# ------------------------------------------------------------------ #
+#  Farmer Livestocks (Member 1)                                          #
+# ------------------------------------------------------------------ #
+app.include_router(farmer_livestocks_router)
 
 # ------------------------------------------------------------------ #
 #  Advisory (Member 2)                                                 #
