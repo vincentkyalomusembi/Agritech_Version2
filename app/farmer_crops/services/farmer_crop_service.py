@@ -64,13 +64,14 @@ class FarmerCropService:
     def remove_crop(
         self,
         farmer_crop_id: UUID,
+        farmer_id: UUID,
     ) -> None:
         """
         Delete a farmer crop.
         """
-
         farmer_crop = self.repository.get_by_id(
-            farmer_crop_id,
+            farmer_crop_id=farmer_crop_id,
+            farmer_id=farmer_id,
         )
 
         if farmer_crop is None:

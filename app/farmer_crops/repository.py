@@ -65,6 +65,7 @@ class FarmerCropRepository:
     def get_by_id(
         self,
         farmer_crop_id: UUID,
+        farmer_id: UUID,
     ) -> FarmerCrop | None:
         """
         Return one farmer crop.
@@ -74,6 +75,7 @@ class FarmerCropRepository:
             self.db.query(FarmerCrop)
             .filter(
                 FarmerCrop.id == farmer_crop_id,
+                FarmerCrop.farmer_id == farmer_id,
             )
             .first()
         )
