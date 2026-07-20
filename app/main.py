@@ -101,3 +101,8 @@ def root():
 
 # Register global exception handlers.
 register_exception_handlers(app)
+
+#Uptime for health checks
+@app.api_route("/health", methods=["GET", "HEAD"])
+async def health():
+    return {"status": "ok"}
