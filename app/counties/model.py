@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import String, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Float
 
 from app.database.base import Base
 
@@ -20,7 +21,17 @@ class County(Base):
         unique=True,
         nullable=False,
         index=True,
-        )
+    )
+
+    latitude: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    longitude: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
     
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
