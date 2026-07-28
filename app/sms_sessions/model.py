@@ -62,6 +62,27 @@ class SMSSession(Base):
         nullable=False,
     )
 
+    # ---- Copilot Improvement ----
+    # Persist Africa's Talking session state and the last callback/response so
+    # provider retries are replay-safe across workers and process restarts.
+    # ---- End Improvement ----
+    callback_session_id: Mapped[str | None] = mapped_column(
+        String(120),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+
+    callback_text: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    response_text: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     session_data: Mapped[str] = mapped_column(
         Text,
         nullable=True,

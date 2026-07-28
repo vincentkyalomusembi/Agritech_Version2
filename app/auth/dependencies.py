@@ -28,7 +28,11 @@ def get_current_farmer(
     try:
         payload = decode_access_token(token)
 
-        farmer_id = payload.get("sub") or payload.get("farmer_id")
+        # ---- Copilot Improvement ----
+        # Only accept the standard subject claim issued by the current login
+        # flow, avoiding ambiguous legacy payloads during authorization.
+        # ---- End Improvement ----
+        farmer_id = payload.get("sub")
 
         if farmer_id is None:
             raise credentials_exception

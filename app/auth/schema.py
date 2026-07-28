@@ -7,7 +7,9 @@ models used by the authentication endpoints.
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.farmers.utils import normalize_phone_number
 
 
 class LoginRequest(BaseModel):
@@ -24,6 +26,21 @@ class LoginRequest(BaseModel):
         min_length=4,
         max_length=10,
     )
+
+    # ---- Copilot Improvement ----
+    # Use the same canonical phone and numeric PIN validation as farmer records.
+    # ---- End Improvement ----
+    @field_validator("phone_number")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        return normalize_phone_number(value)
+
+    @field_validator("pin")
+    @classmethod
+    def validate_pin(cls, value: str) -> str:
+        if not value.isdigit():
+            raise ValueError("PIN must contain digits only.")
+        return value
 
 
 class TokenResponse(BaseModel):

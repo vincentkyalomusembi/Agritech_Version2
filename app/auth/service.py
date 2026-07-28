@@ -6,6 +6,7 @@ from app.auth.security import (
     create_access_token,
 )
 from app.farmers.model import Farmer
+from app.farmers.utils import normalize_phone_number
 
 
 def authenticate_farmer(
@@ -18,13 +19,20 @@ def authenticate_farmer(
     """
 
     # Find farmer using phone number.
+    # ---- Copilot Improvement ----
+    # Normalize phone input before querying so login uses the same canonical
+    # identifier as Africa's Talking callbacks and registration.
+    # ---- End Improvement ----
     farmer = (
         db.query(Farmer)
-        .filter(Farmer.phone_number == phone_number)
+        .filter(Farmer.phone_number == normalize_phone_number(phone_number))
         .first()
     )
 
-    if farmer is None:
+    # ---- Copilot Improvement ----
+    # Inactive accounts must not receive fresh credentials.
+    # ---- End Improvement ----
+    if farmer is None or not farmer.is_active:
         return None
 
     # Verify the entered PIN.

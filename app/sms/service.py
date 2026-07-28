@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session
+from collections.abc import Callable
 
 from app.core.africas_talking import AfricasTalkingClient
 from app.farmers.repository import FarmerRepository
-from app.ussd.service import normalize_phone_number
+from app.farmers.utils import normalize_phone_number
 
 
 class SMSService:
@@ -21,10 +22,16 @@ class SMSService:
         self,
         db: Session,
         sms_client: AfricasTalkingClient | None = None,
+        notification_sender: Callable[..., object] | None = None,
     ):
         self.db = db
         self.farmer_repository = FarmerRepository(db)
         self.sms_client = sms_client or AfricasTalkingClient()
+        # ---- Copilot Improvement ----
+        # Preserve synchronous service use in tests while routes can defer the
+        # network handoff to FastAPI background execution.
+        # ---- End Improvement ----
+        self.notification_sender = notification_sender or self._send_sms_now
 
     def handle(self, phone_number: str, text: str) -> dict:
         """
@@ -62,9 +69,13 @@ class SMSService:
                     "Command not recognized. Reply HELP for available commands."
                 )
 
-        self.sms_client.send_sms(normalized_phone, reply)
+        self.notification_sender(self.sms_client.send_sms, normalized_phone, reply)
 
         return {
             "message": reply,
             "status": "processed",
         }
+
+    @staticmethod
+    def _send_sms_now(sender: Callable[[str, str], dict], phone_number: str, message: str) -> None:
+        sender(phone_number, message)
