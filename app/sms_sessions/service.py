@@ -24,6 +24,9 @@ class SMSSessionService:
         session_type: SessionType,
         current_step: str,
         session_data: dict | None = None,
+        callback_session_id: str | None = None,
+        callback_text: str | None = None,
+        response_text: str | None = None,
     ):
         self.repository.expire_stale_sessions(farmer_id)
 
@@ -39,6 +42,9 @@ class SMSSessionService:
             current_step=current_step,
             expires_at=expires_at,
             session_data=payload,
+            callback_session_id=callback_session_id,
+            callback_text=callback_text,
+            response_text=response_text,
         )
 
     def complete_session(self, session):

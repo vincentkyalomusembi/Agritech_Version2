@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_farmer
 from app.database.sessions import get_db
+from app.core.rate_limit import limit_login_attempts
 from app.farmers.model import Farmer
 
 from app.farmers.schema import (
@@ -59,6 +60,7 @@ def login_farmer(
     login_data: FarmerLogin,
     phone_number: str,
     db: Session = Depends(get_db),
+    _: None = Depends(limit_login_attempts),
 ):
     """
     Authenticate a farmer.

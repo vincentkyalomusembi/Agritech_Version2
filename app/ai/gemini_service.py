@@ -10,6 +10,12 @@ class GeminiService:
     """
 
     def __init__(self):
+        # ---- Copilot Improvement ----
+        # Fail before constructing an SDK client with an empty credential so
+        # configuration faults are clear and do not trigger avoidable retries.
+        # ---- End Improvement ----
+        if not settings.GEMINI_API_KEY:
+            raise RuntimeError("Gemini API is not configured.")
         self.client = genai.Client(
             api_key=settings.GEMINI_API_KEY
         )
@@ -22,12 +28,20 @@ class GeminiService:
         Generate an agricultural recommendation.
         """
 
+        # ---- Copilot Improvement ----
+        # Ask for a bounded, structured answer and trim overlong provider text
+        # so USSD/SMS follow-up messages remain concise and predictable.
+        # ---- End Improvement ----
         prompt = f"""
 {SYSTEM_PROMPT}
 
 Farmer Data
 
 {context}
+
+Return at most six short bullet points covering crop varieties, livestock,
+disease risks, fertilizer/feed, farming action, and market opportunity. Omit
+categories not supported by the supplied data.
 """
 
         response = self.client.models.generate_content(
@@ -35,4 +49,4 @@ Farmer Data
             contents=prompt,
         )
 
-        return response.text
+        return (response.text or "").strip()[:1200]

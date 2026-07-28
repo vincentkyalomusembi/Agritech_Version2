@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, Form
+import hmac
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header, HTTPException, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
+from app.core.config import settings
 from app.ussd.exceptions import InvalidPinError, UnregisteredPhoneError
 from app.ussd.service import USSDService
 
@@ -13,23 +16,46 @@ router = APIRouter(
 
 @router.post("/ussd")
 def ussd_callback(
-    sessionId: str = Form(...),
-    serviceCode: str = Form(...),
-    phoneNumber: str = Form(...),
-    text: str = Form(default=""),
+    background_tasks: BackgroundTasks,
+    sessionId: str = Form(..., min_length=1, max_length=120),
+    serviceCode: str = Form(..., min_length=1, max_length=40),
+    phoneNumber: str = Form(..., min_length=10, max_length=20),
+    text: str = Form(default="", max_length=250),
     networkCode: str | None = Form(default=None),
+    webhook_secret: str | None = Header(default=None, alias="X-Webhook-Secret"),
     db: Session = Depends(get_db),
 ):
     """
     Africa's Talking USSD callback endpoint.
     """
 
-    service = USSDService(db)
+    # ---- Copilot Improvement ----
+    # Enforce a configurable shared secret when provisioned in Africa's Talking
+    # and send SMS after the time-sensitive USSD response has been returned.
+    # ---- End Improvement ----
+    if settings.AFRICAS_TALKING_WEBHOOK_SECRET and not hmac.compare_digest(
+        webhook_secret or "", settings.AFRICAS_TALKING_WEBHOOK_SECRET
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook credentials.",
+        )
+    if (
+        settings.AFRICAS_TALKING_USSD_SERVICE_CODE
+        and serviceCode != settings.AFRICAS_TALKING_USSD_SERVICE_CODE
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid USSD service code.",
+        )
+
+    service = USSDService(db, notification_sender=background_tasks.add_task)
 
     try:
         response = service.handle(
             phone_number=phoneNumber,
             text=text,
+            callback_session_id=sessionId,
         )
 
     except UnregisteredPhoneError as exc:

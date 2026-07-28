@@ -51,7 +51,11 @@ pwd_context = CryptContext(
 ALGORITHM = "HS256"
 
 # Token expiration time in minutes.
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# ---- Copilot Improvement ----
+# Keep token lifetime configurable while preserving the existing 30-minute
+# default; issuer/audience claims prevent tokens from other services being used.
+# ---- End Improvement ----
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 
 
@@ -135,8 +139,20 @@ def create_access_token(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    # Add expiration timestamp to the payload.
-    to_encode.update({"exp": expire})
+    # ---- Copilot Improvement ----
+    # Require a configured signing key and include standard validation claims.
+    # Empty keys must never silently sign production JWTs.
+    # ---- End Improvement ----
+    if not settings.SECRET_KEY:
+        raise RuntimeError("JWT signing is not configured.")
+
+    now = datetime.now(timezone.utc)
+    to_encode.update({
+        "exp": expire,
+        "iat": now,
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+    })
 
     # Encode and sign the token.
     encoded_jwt = jwt.encode(
@@ -171,10 +187,18 @@ def decode_access_token(token: str) -> dict[str, Any]:
         If the token is invalid or has expired.
     """
 
+    # ---- Copilot Improvement ----
+    # Validate issuer and audience in addition to signature and expiry.
+    # ---- End Improvement ----
+    if not settings.SECRET_KEY:
+        raise JWTError("JWT signing is not configured.")
+
     payload = jwt.decode(
         token,
         settings.SECRET_KEY,
         algorithms=[ALGORITHM],
+        issuer=settings.JWT_ISSUER,
+        audience=settings.JWT_AUDIENCE,
     )
 
     return payload

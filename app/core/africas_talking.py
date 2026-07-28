@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 
 import httpx
 
@@ -52,14 +53,17 @@ class AfricasTalkingClient:
         }
 
         try:
-            with httpx.Client(timeout=30.0) as client:
-                response = client.post(
-                    SMS_API_URL,
-                    headers=headers,
-                    data=data,
-                )
-                response.raise_for_status()
-                return response.json()
+            # ---- Copilot Improvement ----
+            # Reuse a process-local HTTP client to avoid TCP/TLS setup on each
+            # SMS handoff; timeout remains bounded by application settings.
+            # ---- End Improvement ----
+            response = get_http_client().post(
+                SMS_API_URL,
+                headers=headers,
+                data=data,
+            )
+            response.raise_for_status()
+            return response.json()
 
         except httpx.HTTPError as exc:
             logger.error("Failed to send SMS via Africa's Talking: %s", exc)
@@ -71,3 +75,11 @@ class AfricasTalkingClient:
 
 def get_africas_talking_client() -> AfricasTalkingClient:
     return AfricasTalkingClient()
+
+
+# ---- Copilot Improvement ----
+# One shared client enables connection pooling for low-latency outbound SMS.
+# ---- End Improvement ----
+@lru_cache(maxsize=1)
+def get_http_client() -> httpx.Client:
+    return httpx.Client(timeout=settings.OUTBOUND_HTTP_TIMEOUT_SECONDS)

@@ -35,6 +35,19 @@ class SMSSessionRepository:
             .first()
         )
 
+    # ---- Copilot Improvement ----
+    # A provider session ID is a stable idempotency key for USSD retries.
+    # ---- End Improvement ----
+    def get_by_callback_session_id(
+        self,
+        callback_session_id: str,
+    ) -> SMSSession | None:
+        return (
+            self.db.query(SMSSession)
+            .filter(SMSSession.callback_session_id == callback_session_id)
+            .first()
+        )
+
     def create(
         self,
         farmer_id: uuid.UUID,
@@ -42,6 +55,9 @@ class SMSSessionRepository:
         current_step: str,
         expires_at: datetime,
         session_data: str | None = None,
+        callback_session_id: str | None = None,
+        callback_text: str | None = None,
+        response_text: str | None = None,
     ) -> SMSSession:
         session = SMSSession(
             farmer_id=farmer_id,
@@ -49,6 +65,9 @@ class SMSSessionRepository:
             session_status=SessionStatus.ACTIVE,
             current_step=current_step,
             session_data=session_data,
+            callback_session_id=callback_session_id,
+            callback_text=callback_text,
+            response_text=response_text,
             expires_at=expires_at,
             is_active=True,
         )
@@ -72,19 +91,24 @@ class SMSSessionRepository:
     def expire_stale_sessions(self, farmer_id: uuid.UUID) -> None:
         now = datetime.now(timezone.utc)
 
-        stale_sessions = (
+        # ---- Copilot Improvement ----
+        # Use one SQL update instead of loading every expired session into
+        # memory, keeping callback latency stable for repeat users.
+        # ---- End Improvement ----
+        updated = (
             self.db.query(SMSSession)
             .filter(
                 SMSSession.farmer_id == farmer_id,
                 SMSSession.session_status == SessionStatus.ACTIVE,
                 SMSSession.expires_at < now,
             )
-            .all()
+            .update(
+                {
+                    SMSSession.session_status: SessionStatus.EXPIRED,
+                    SMSSession.is_active: False,
+                },
+                synchronize_session=False,
+            )
         )
-
-        for session in stale_sessions:
-            session.session_status = SessionStatus.EXPIRED
-            session.is_active = False
-
-        if stale_sessions:
+        if updated:
             self.db.commit()

@@ -1,6 +1,8 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.farmers.utils import normalize_phone_number
 
 
 class FarmerCreate(BaseModel):
@@ -34,6 +36,22 @@ class FarmerCreate(BaseModel):
 
     county_id: UUID
 
+    # ---- Copilot Improvement ----
+    # Canonicalize phone numbers and restrict PINs to numeric values before
+    # persistence, preventing duplicate identity formats and weak PIN input.
+    # ---- End Improvement ----
+    @field_validator("phone_number")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        return normalize_phone_number(value)
+
+    @field_validator("pin")
+    @classmethod
+    def validate_pin(cls, value: str) -> str:
+        if not value.isdigit():
+            raise ValueError("PIN must contain digits only.")
+        return value
+
 
 class FarmerLogin(BaseModel):
     """
@@ -45,6 +63,16 @@ class FarmerLogin(BaseModel):
         min_length=4,
         max_length=10,
     )
+
+    # ---- Copilot Improvement ----
+    # Keep PIN validation consistent across REST authentication endpoints.
+    # ---- End Improvement ----
+    @field_validator("pin")
+    @classmethod
+    def validate_pin(cls, value: str) -> str:
+        if not value.isdigit():
+            raise ValueError("PIN must contain digits only.")
+        return value
 
 
 class FarmerUpdate(BaseModel):

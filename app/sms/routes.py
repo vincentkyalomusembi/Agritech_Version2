@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, Form
 from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
@@ -15,6 +15,7 @@ router = APIRouter(
     response_model=SMSResponse,
 )
 def sms_callback(
+    background_tasks: BackgroundTasks,
     from_: str = Form(..., alias="from"),
     to: str = Form(...),
     text: str = Form(default=""),
@@ -27,7 +28,11 @@ def sms_callback(
     Africa's Talking SMS callback endpoint.
     """
 
-    service = SMSService(db)
+    # ---- Copilot Improvement ----
+    # Queue the outbound reply so the callback acknowledges quickly to the
+    # gateway without coupling inbound SMS processing to network latency.
+    # ---- End Improvement ----
+    service = SMSService(db, notification_sender=background_tasks.add_task)
 
     result = service.handle(
         phone_number=from_,

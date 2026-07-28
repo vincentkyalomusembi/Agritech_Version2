@@ -13,6 +13,7 @@ from app.auth.schema import (
 )
 from app.auth.service import login_farmer
 from app.database.sessions import get_db
+from app.core.rate_limit import limit_login_attempts
 from app.farmers.model import Farmer
 
 router = APIRouter()
@@ -25,6 +26,7 @@ router = APIRouter()
 def login(
     login_data: LoginRequest,
     db: Session = Depends(get_db),
+    _: None = Depends(limit_login_attempts),
 ):
     """
     Authenticate a farmer and return a JWT.
