@@ -1,233 +1,210 @@
-import json
-from collections.abc import Callable
-
+"""
+USSD service — handles the full navigation tree:
+  Screen 0: Welcome (Register / Login / About)
+  Screen 1.x: Registration flow
+  Screen 2.x: Login → Main Menu → Service launch
+"""
 from sqlalchemy.orm import Session
 
-from app.auth.security import verify_pin
+from app.auth.security import hash_pin, verify_pin
 from app.core.africas_talking import AfricasTalkingClient
+from app.core.rate_limit import check_rate_limit
+from app.core.redis_client import get_redis
+from app.counties.repository import CountyRepository
+from app.farmers.model import Farmer
 from app.farmers.repository import FarmerRepository
 from app.farmers.utils import normalize_phone_number
+from app.sms.flows import FLOWS, NO_QUESTION_SERVICES
 from app.sms_sessions.model import SessionType
+from app.sms_sessions.repository import SMSSessionRepository
 from app.sms_sessions.service import SMSSessionService
 from app.ussd import menu
-from app.ussd.exceptions import InvalidPinError, UnregisteredPhoneError
 
 
 class USSDService:
-    """
-    Handles USSD menu navigation and session management.
-    """
-
-    def __init__(
-        self,
-        db: Session,
-        sms_client: AfricasTalkingClient | None = None,
-        notification_sender: Callable[..., object] | None = None,
-    ):
+    def __init__(self, db: Session, sms_client: AfricasTalkingClient | None = None):
         self.db = db
-        self.farmer_repository = FarmerRepository(db)
+        self.farmer_repo = FarmerRepository(db)
+        self.county_repo = CountyRepository(db)
         self.session_service = SMSSessionService(db)
-        self.sms_client = sms_client or AfricasTalkingClient()
-        # ---- Copilot Improvement ----
-        # Routes can enqueue SMS after returning the short USSD response while
-        # direct service callers retain the existing synchronous behaviour.
-        # ---- End Improvement ----
-        self.notification_sender = notification_sender or self._send_sms_now
+        self.session_repo = SMSSessionRepository(db)
+        self.sms = sms_client or AfricasTalkingClient()
+        self.redis = get_redis()
 
-    def handle(
-        self,
-        phone_number: str,
-        text: str,
-        callback_session_id: str | None = None,
-    ) -> str:
-        """
-        Process a USSD callback and return a CON/END response.
-        """
+    def handle(self, phone_number: str, text: str, callback_session_id: str | None = None) -> str:
+        phone = normalize_phone_number(phone_number)
 
-        normalized_phone = normalize_phone_number(phone_number)
-        # ---- Copilot Improvement ----
-        # Return a previously persisted result for an identical callback to
-        # prevent duplicate sessions and outbound SMS on AT retries.
-        # ---- End Improvement ----
-        existing_session = (
-            self.session_service.repository.get_by_callback_session_id(
-                callback_session_id
-            )
-            if callback_session_id
-            else None
-        )
-        if (
-            existing_session
-            and existing_session.callback_text == text
-            and existing_session.response_text
-        ):
-            return existing_session.response_text
-        parts = [part for part in text.split("*") if part != ""]
+        # Replay protection
+        if callback_session_id:
+            existing = self.session_repo.get_by_callback_session_id(callback_session_id)
+            if existing and existing.callback_text == text and existing.response_text:
+                return existing.response_text
 
+        parts = [p for p in text.split("*") if p != ""]
+
+        # Screen 0 — Welcome
         if not parts:
-            return menu.MAIN_MENU
+            return menu.WELCOME
 
-        choice = parts[0]
+        top = parts[0]
 
-        if choice == "0":
+        if top == "0":
             return menu.GOODBYE
 
-        if choice not in menu.MENU_OPTIONS:
-            return menu.INVALID_OPTION
+        if top == "3":
+            return menu.ABOUT
 
-        if len(parts) == 1:
-            return menu.PIN_PROMPT
+        # ── Registration branch ───────────────────────────────────────
+        if top == "1":
+            return self._handle_registration(phone, parts, callback_session_id, text)
 
-        pin = parts[1]
-        farmer = self._authenticate_farmer(normalized_phone, pin)
-        service_key = menu.MENU_OPTIONS[choice]
+        # ── Login branch ──────────────────────────────────────────────
+        if top == "2":
+            return self._handle_login(phone, parts, callback_session_id, text)
 
-        if service_key == "crop":
-            return self._handle_crop_request(farmer, callback_session_id, text)
+        return menu.INVALID_OPTION
 
-        if service_key == "livestock":
-            return self._handle_livestock_request(farmer, callback_session_id, text)
+    # ── Registration ─────────────────────────────────────────────────
 
-        return self._handle_expert_request(
-            farmer, parts, callback_session_id, text, existing_session
-        )
+    def _handle_registration(self, phone: str, parts: list, cb_id: str | None, text: str) -> str:
+        depth = len(parts)
 
-    def _authenticate_farmer(self, phone_number: str, pin: str):
-        farmer = self.farmer_repository.get_by_phone(phone_number)
+        if depth == 1:
+            return menu.REG_NAME
+        if depth == 2:
+            return menu.REG_ID
+        if depth == 3:
+            return menu.REG_COUNTY
+        if depth == 4:
+            return menu.REG_PIN
+        if depth == 5:
+            return menu.REG_PIN_CONFIRM
+
+        if depth == 6:
+            full_name = parts[1].strip()
+            national_id = parts[2].strip()
+            county_name = parts[3].strip()
+            pin = parts[4].strip()
+            pin_confirm = parts[5].strip()
+
+            if pin != pin_confirm:
+                return menu.REG_PIN_MISMATCH
+
+            if self.farmer_repo.get_by_phone(phone):
+                return menu.REG_PHONE_EXISTS
+
+            if self.farmer_repo.get_by_national_id(national_id):
+                return menu.REG_ID_EXISTS
+
+            county = self.county_repo.get_by_name_fuzzy(county_name)
+            if county is None:
+                return menu.REG_COUNTY_NOT_FOUND
+
+            farmer = Farmer(
+                full_name=full_name,
+                national_id=national_id,
+                phone_number=phone,
+                pin_hash=hash_pin(pin),
+                county_id=county.id,
+            )
+            self.farmer_repo.create(farmer)
+
+            self.sms.send_sms(
+                phone,
+                f"Welcome {full_name}.\nYour AgriTech AI account has been created successfully.\nDial *384# to access services.",
+            )
+            return menu.REG_SUCCESS
+
+        return menu.INVALID_OPTION
+
+    # ── Login + Main Menu ─────────────────────────────────────────────
+
+    def _handle_login(self, phone: str, parts: list, cb_id: str | None, text: str) -> str:
+        depth = len(parts)
+
+        if depth == 1:
+            farmer = self.farmer_repo.get_by_phone(phone)
+            if farmer is None:
+                return menu.NOT_REGISTERED
+            return menu.LOGIN_PIN
+
+        pin = parts[1].strip()
+        farmer = self.farmer_repo.get_by_phone(phone)
 
         if farmer is None:
-            raise UnregisteredPhoneError()
-
-        if not farmer.is_active:
-            raise UnregisteredPhoneError()
+            return menu.NOT_REGISTERED
 
         if not verify_pin(pin, farmer.pin_hash):
-            raise InvalidPinError()
+            return menu.LOGIN_FAILED
 
-        return farmer
+        # Authenticated — show main menu or handle service selection
+        if depth == 2:
+            return menu.MAIN_MENU.format(name=farmer.full_name.split()[0])
 
-    def _handle_crop_request(
-        self,
-        farmer,
-        callback_session_id: str | None,
-        text: str,
-    ) -> str:
-        session = self.session_service.start_session(
-            farmer_id=farmer.id,
-            session_type=SessionType.CROP_RECOMMENDATION,
-            current_step="completed",
-            callback_session_id=callback_session_id,
-            callback_text=text,
-            response_text=menu.CROP_CONFIRMATION,
-        )
-        self.session_service.complete_session(session)
+        service_choice = parts[2].strip()
 
-        self._notify_farmer(
-            farmer.phone_number,
-            "AgriTech AI: Your crop recommendation request is being processed.",
-        )
+        if service_choice == "0":
+            return menu.GOODBYE
 
-        return menu.CROP_CONFIRMATION
+        if service_choice not in menu.MENU_OPTIONS:
+            return menu.INVALID_OPTION
 
-    def _handle_livestock_request(
-        self,
-        farmer,
-        callback_session_id: str | None,
-        text: str,
-    ) -> str:
-        session = self.session_service.start_session(
-            farmer_id=farmer.id,
-            session_type=SessionType.LIVESTOCK_RECOMMENDATION,
-            current_step="completed",
-            callback_session_id=callback_session_id,
-            callback_text=text,
-            response_text=menu.LIVESTOCK_CONFIRMATION,
-        )
-        self.session_service.complete_session(session)
+        service_key = menu.MENU_OPTIONS[service_choice]
+        return self._launch_service(farmer, service_key, cb_id, text)
 
-        self._notify_farmer(
-            farmer.phone_number,
-            "AgriTech AI: Your livestock recommendation request is being processed.",
-        )
+    # ── Service launcher ──────────────────────────────────────────────
 
-        return menu.LIVESTOCK_CONFIRMATION
+    def _launch_service(self, farmer, service_key: str, cb_id: str | None, text: str) -> str:
+        session_type = SessionType(service_key)
 
-    def _handle_expert_request(
-        self,
-        farmer,
-        parts: list[str],
-        callback_session_id: str | None,
-        text: str,
-        existing_session,
-    ) -> str:
-        if len(parts) == 2:
-            # ---- Copilot Improvement ----
-            # Reuse an in-progress expert session when a handset resubmits the
-            # menu step, avoiding a unique callback-session collision.
-            # ---- End Improvement ----
-            if existing_session:
-                existing_session.callback_text = text
-                existing_session.response_text = menu.EXPERT_PROMPT
-                self.session_service.repository.update(existing_session)
-                return menu.EXPERT_PROMPT
-            self.session_service.start_session(
-                farmer_id=farmer.id,
-                session_type=SessionType.EXPERT_REQUEST,
-                current_step="awaiting_description",
-                callback_session_id=callback_session_id,
-                callback_text=text,
-                response_text=menu.EXPERT_PROMPT,
-            )
-            return menu.EXPERT_PROMPT
+        # Rate limiting
+        if not check_rate_limit(self.redis, str(farmer.phone_number)):
+            return "END You have reached your request limit. Please try again later."
 
-        description = parts[2].strip()
+        # Check for existing active session
+        existing = self.session_repo.get_active_by_farmer_and_type(farmer.id, session_type)
+        if existing:
+            label = menu.SERVICE_LABELS.get(service_key, service_key)
+            return menu.SESSION_ACTIVE.format(service=label)
 
-        if not description:
-            return "CON Description cannot be empty. Please try again:"
+        confirmation = menu.SERVICE_CONFIRMATIONS[service_key]
 
-        if len(description) > 160:
-            return (
-                "CON Description too long. "
-                "Please keep it under 160 characters:"
-            )
+        # Fire-and-forget services (no questions needed)
+        if service_key in NO_QUESTION_SERVICES:
+            self._dispatch_no_question_service(farmer, service_key, cb_id, text, confirmation)
+            return confirmation
 
-        # ---- Copilot Improvement ----
-        # Resume the matching provider session when available rather than
-        # accidentally consuming another active expert request for the farmer.
-        # ---- End Improvement ----
-        session = existing_session or self.session_service.repository.get_active_by_farmer_and_type(
-            farmer.id, SessionType.EXPERT_REQUEST
-        )
-
-        if session is None:
+        # Start SMS conversation session
+        flow = FLOWS.get(service_key, [])
+        if flow:
             session = self.session_service.start_session(
                 farmer_id=farmer.id,
-                session_type=SessionType.EXPERT_REQUEST,
-                current_step="completed",
-                session_data={"description": description},
-                callback_session_id=callback_session_id,
+                session_type=session_type,
+                current_step=0,
+                callback_session_id=cb_id,
                 callback_text=text,
-                response_text=menu.EXPERT_CONFIRMATION,
+                response_text=confirmation,
             )
-        else:
-            session.session_data = json.dumps({"description": description})
-            session.current_step = "completed"
-            session.callback_text = text
-            session.response_text = menu.EXPERT_CONFIRMATION
-            self.session_service.repository.update(session)
+            # Send first question via SMS
+            first_q = flow[0]["question"].format(name=farmer.full_name.split()[0], plan="")
+            self.sms.send_sms(farmer.phone_number, first_q)
 
-        self.session_service.complete_session(session)
+        return confirmation
 
-        self._notify_farmer(
-            farmer.phone_number,
-            "AgriTech AI: Your expert request has been received.",
+    def _dispatch_no_question_service(self, farmer, service_key: str, cb_id: str | None, text: str, confirmation: str) -> None:
+        from app.tasks.recommendation_tasks import run_weather_alerts, run_market_prices
+
+        session = self.session_service.start_session(
+            farmer_id=farmer.id,
+            session_type=SessionType(service_key),
+            current_step=0,
+            callback_session_id=cb_id,
+            callback_text=text,
+            response_text=confirmation,
         )
+        self.session_service.mark_processing(session)
 
-        return menu.EXPERT_CONFIRMATION
-
-    def _notify_farmer(self, phone_number: str, message: str) -> None:
-        self.notification_sender(self.sms_client.send_sms, phone_number, message)
-
-    @staticmethod
-    def _send_sms_now(sender: Callable[[str, str], dict], phone_number: str, message: str) -> None:
-        sender(phone_number, message)
+        if service_key == "weather_alerts":
+            run_weather_alerts.delay(str(session.id), str(farmer.id), farmer.phone_number)
+        elif service_key == "market_prices":
+            run_market_prices.delay(str(session.id), str(farmer.id), farmer.phone_number)

@@ -3,10 +3,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # ---- Copilot Improvement ----
-    # Centralise operational limits and optional webhook authentication so secrets
-    # remain environment-owned and can be rotated without code changes.
-    # ---- End Improvement ----
     DATABASE_URL: str = ""
     SECRET_KEY: str = Field(default="", repr=False)
     JWT_ISSUER: str = "agritech-ai"
@@ -27,12 +23,29 @@ class Settings(BaseSettings):
     GEE_SERVICE_ACCOUNT: str = ""
     GEE_CREDENTIALS: str = ""
 
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # M-Pesa Daraja
+    MPESA_CONSUMER_KEY: str = ""
+    MPESA_CONSUMER_SECRET: str = Field(default="", repr=False)
+    MPESA_SHORTCODE: str = ""
+    MPESA_PASSKEY: str = Field(default="", repr=False)
+    MPESA_CALLBACK_URL: str = ""
+    MPESA_ENV: str = "sandbox"  # sandbox | production
+
+    # Rate limiting
+    RATE_LIMIT_PER_HOUR: int = 3
+    RATE_LIMIT_PER_DAY: int = 10
+
+    # SMS session TTL (hours)
+    SMS_SESSION_TTL_HOURS: int = 24
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
         case_sensitive=True,
     )
-    
 
 
 settings = Settings()

@@ -4,14 +4,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header, HTTPExcep
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
-from app.database.sessions import get_db
 from app.core.config import settings
-from app.ussd.exceptions import InvalidPinError, UnregisteredPhoneError
+from app.database.sessions import get_db
 from app.ussd.service import USSDService
 
-router = APIRouter(
-    tags=["USSD"],
-)
+router = APIRouter(tags=["USSD"])
 
 
 @router.post("/ussd")
@@ -25,43 +22,19 @@ def ussd_callback(
     webhook_secret: str | None = Header(default=None, alias="X-Webhook-Secret"),
     db: Session = Depends(get_db),
 ):
-    """
-    Africa's Talking USSD callback endpoint.
-    """
-
-    # ---- Copilot Improvement ----
-    # Enforce a configurable shared secret when provisioned in Africa's Talking
-    # and send SMS after the time-sensitive USSD response has been returned.
-    # ---- End Improvement ----
+    """Africa's Talking USSD callback endpoint."""
     if settings.AFRICAS_TALKING_WEBHOOK_SECRET and not hmac.compare_digest(
         webhook_secret or "", settings.AFRICAS_TALKING_WEBHOOK_SECRET
     ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook credentials.",
-        )
-    if (
-        settings.AFRICAS_TALKING_USSD_SERVICE_CODE
-        and serviceCode != settings.AFRICAS_TALKING_USSD_SERVICE_CODE
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid USSD service code.",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook credentials.")
 
-    service = USSDService(db, notification_sender=background_tasks.add_task)
+    if settings.AFRICAS_TALKING_USSD_SERVICE_CODE and serviceCode != settings.AFRICAS_TALKING_USSD_SERVICE_CODE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid USSD service code.")
 
-    try:
-        response = service.handle(
-            phone_number=phoneNumber,
-            text=text,
-            callback_session_id=sessionId,
-        )
-
-    except UnregisteredPhoneError as exc:
-        response = f"END {exc}"
-
-    except InvalidPinError as exc:
-        response = f"END {exc}"
-
+    service = USSDService(db)
+    response = service.handle(
+        phone_number=phoneNumber,
+        text=text,
+        callback_session_id=sessionId,
+    )
     return PlainTextResponse(response)
