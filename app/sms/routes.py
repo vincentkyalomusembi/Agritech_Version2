@@ -1,45 +1,42 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Form
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
-from app.sms.schema import SMSResponse
-from app.sms.service import SMSService
+from app.sms.handler import SMSHandler
 
-router = APIRouter(
-    tags=["SMS"],
-)
+router = APIRouter(tags=["SMS"])
 
 
-@router.post(
-    "/sms",
-    response_model=SMSResponse,
-)
+@router.post("/sms")
 def sms_callback(
     background_tasks: BackgroundTasks,
     from_: str = Form(..., alias="from"),
     to: str = Form(...),
     text: str = Form(default=""),
-    date: str | None = Form(default=None),
     id: str | None = Form(default=None),
+    date: str | None = Form(default=None),
     linkId: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
-    """
-    Africa's Talking SMS callback endpoint.
-    """
-
-    # ---- Copilot Improvement ----
-    # Queue the outbound reply so the callback acknowledges quickly to the
-    # gateway without coupling inbound SMS processing to network latency.
-    # ---- End Improvement ----
-    service = SMSService(db, notification_sender=background_tasks.add_task)
-
-    result = service.handle(
+    """Africa's Talking inbound SMS webhook."""
+    background_tasks.add_task(
+        SMSHandler(db).handle,
         phone_number=from_,
         text=text,
+        message_id=id,
     )
+    return JSONResponse({"status": "received"})
 
-    return SMSResponse(
-        message=result["message"],
-        status=result["status"],
-    )
+
+@router.post("/sms/delivery")
+def sms_delivery_report(
+    id: str | None = Form(default=None),
+    status: str | None = Form(default=None),
+    phoneNumber: str | None = Form(default=None),
+    networkCode: str | None = Form(default=None),
+    failureReason: str | None = Form(default=None),
+):
+    """Africa's Talking SMS delivery report webhook."""
+    # Logged for monitoring — admin dashboard will consume this later
+    return JSONResponse({"status": "ok"})

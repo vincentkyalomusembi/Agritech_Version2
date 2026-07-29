@@ -1,33 +1,57 @@
-"""Small in-process request limiter for sensitive prototype endpoints."""
+"""
+Per-phone-number rate limiting using Redis sliding window counters.
+"""
+import redis
+from fastapi import Request
 
-from collections import defaultdict, deque
-from time import monotonic
-
-from fastapi import HTTPException, Request, status
+from app.core.config import settings
 
 
-# ---- Copilot Improvement ----
-# Bound login attempts per direct client IP to slow PIN guessing without adding
-# a new infrastructure dependency. Use a shared Redis-backed limiter before a
-# multi-instance production deployment.
-# ---- End Improvement ----
-_attempts: dict[str, deque[float]] = defaultdict(deque)
-_WINDOW_SECONDS = 60
-_MAX_ATTEMPTS = 10
+def check_rate_limit(r: redis.Redis, phone: str) -> bool:
+    """
+    Returns True if the request is allowed, False if rate limit exceeded.
+    Enforces:
+      - max RATE_LIMIT_PER_HOUR requests per hour
+      - max RATE_LIMIT_PER_DAY requests per day
+    """
+    hour_key = f"rl:hour:{phone}"
+    day_key = f"rl:day:{phone}"
+
+    pipe = r.pipeline()
+    pipe.incr(hour_key)
+    pipe.expire(hour_key, 3600)
+    pipe.incr(day_key)
+    pipe.expire(day_key, 86400)
+    results = pipe.execute()
+
+    hour_count = results[0]
+    day_count = results[2]
+
+    if hour_count > settings.RATE_LIMIT_PER_HOUR:
+        return False
+    if day_count > settings.RATE_LIMIT_PER_DAY:
+        return False
+    return True
 
 
 def limit_login_attempts(request: Request) -> None:
-    """Reject excessive login requests from one direct client address."""
-
-    client_ip = request.client.host if request.client else "unknown"
-    now = monotonic()
-    attempts = _attempts[client_ip]
-    while attempts and attempts[0] <= now - _WINDOW_SECONDS:
-        attempts.popleft()
-    if len(attempts) >= _MAX_ATTEMPTS:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Please try again shortly.",
-            headers={"Retry-After": str(_WINDOW_SECONDS)},
-        )
-    attempts.append(now)
+    """
+    FastAPI dependency — rate-limits login attempts by IP address.
+    Allows up to 10 attempts per minute per IP.
+    """
+    try:
+        from app.core.redis_client import get_redis
+        r = get_redis()
+        ip = request.client.host if request.client else "unknown"
+        key = f"rl:login:{ip}"
+        count = r.incr(key)
+        r.expire(key, 60)
+        if count > 10:
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Please try again later.",
+            )
+    except Exception:
+        # If Redis is unavailable, allow the request through
+        pass

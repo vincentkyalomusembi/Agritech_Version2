@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Integer,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -17,15 +18,23 @@ from app.database.base import Base
 
 
 class SessionType(enum.Enum):
-    CROP_RECOMMENDATION = "Crop Recommendation"
-    LIVESTOCK_RECOMMENDATION = "Livestock Recommendation"
-    EXPERT_REQUEST = "Expert Request"
+    CROP_RECOMMENDATION = "crop_recommendation"
+    LIVESTOCK_RECOMMENDATION = "livestock_recommendation"
+    WEATHER_ALERTS = "weather_alerts"
+    DISEASE_ALERTS = "disease_alerts"
+    MARKET_PRICES = "market_prices"
+    EXPERT_REQUEST = "expert_request"
+    PROFILE_UPDATE = "profile_update"
+    SUBSCRIPTION = "subscription"
 
 
 class SessionStatus(enum.Enum):
-    ACTIVE = "Active"
-    COMPLETED = "Completed"
-    EXPIRED = "Expired"
+    ACTIVE = "active"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    EXPIRED = "expired"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class SMSSession(Base):
@@ -45,27 +54,24 @@ class SMSSession(Base):
     )
 
     session_type: Mapped[SessionType] = mapped_column(
-        Enum(SessionType),
+        Enum(SessionType, name="sessiontype", create_type=False),
         nullable=False,
         index=True,
     )
 
     session_status: Mapped[SessionStatus] = mapped_column(
-        Enum(SessionStatus),
+        Enum(SessionStatus, name="sessionstatus", create_type=False),
         default=SessionStatus.ACTIVE,
         nullable=False,
         index=True,
     )
 
-    current_step: Mapped[str] = mapped_column(
-        String(100),
+    current_step: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
         nullable=False,
     )
 
-    # ---- Copilot Improvement ----
-    # Persist Africa's Talking session state and the last callback/response so
-    # provider retries are replay-safe across workers and process restarts.
-    # ---- End Improvement ----
     callback_session_id: Mapped[str | None] = mapped_column(
         String(120),
         unique=True,
@@ -83,9 +89,24 @@ class SMSSession(Base):
         nullable=True,
     )
 
-    session_data: Mapped[str] = mapped_column(
+    # JSON blob accumulating all collected answers
+    session_data: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    # AT inbound message ID for deduplication
+    last_message_id: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+        index=True,
+    )
+
+    # Count of consecutive invalid replies
+    invalid_reply_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
     )
 
     expires_at: Mapped[DateTime] = mapped_column(

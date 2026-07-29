@@ -35,8 +35,9 @@ passlib==1.7.4
 bcrypt==4.0.1
 python-jose[cryptography]
 
-# Background Tasks
-apscheduler
+# Background Tasks — Celery + Redis
+celery[redis]
+redis
 
 # Web Scraping
 beautifulsoup4
@@ -49,7 +50,7 @@ loguru
 pytest
 pytest-asyncio
 
-#Generate veterinary and agricultural officers
+# Generate veterinary and agricultural officers
 Faker
 
 python-multipart
