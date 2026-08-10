@@ -70,22 +70,16 @@ class USSDService:
         depth = len(parts)
 
         if depth == 1:
-            return menu.REG_NAME
-        if depth == 2:
             return menu.REG_ID
-        if depth == 3:
-            return menu.REG_COUNTY
-        if depth == 4:
+        if depth == 2:
             return menu.REG_PIN
-        if depth == 5:
+        if depth == 3:
             return menu.REG_PIN_CONFIRM
 
-        if depth == 6:
-            full_name = parts[1].strip()
-            national_id = parts[2].strip()
-            county_name = parts[3].strip()
-            pin = parts[4].strip()
-            pin_confirm = parts[5].strip()
+        if depth == 4:
+            national_id = parts[1].strip()
+            pin = parts[2].strip()
+            pin_confirm = parts[3].strip()
 
             if pin != pin_confirm:
                 return menu.REG_PIN_MISMATCH
@@ -96,22 +90,26 @@ class USSDService:
             if self.farmer_repo.get_by_national_id(national_id):
                 return menu.REG_ID_EXISTS
 
-            county = self.county_repo.get_by_name_fuzzy(county_name)
-            if county is None:
-                return menu.REG_COUNTY_NOT_FOUND
+            # Use a placeholder county (Nairobi) and name until farmer completes
+            # profile via SMS. County ID 1 is resolved from the default county.
+            default_county = self.county_repo.get_by_name_fuzzy("Nairobi")
 
             farmer = Farmer(
-                full_name=full_name,
+                full_name="New Farmer",
                 national_id=national_id,
                 phone_number=phone,
                 pin_hash=hash_pin(pin),
-                county_id=county.id,
+                county_id=default_county.id,
             )
             self.farmer_repo.create(farmer)
 
+            # Send SMS asking farmer to complete their profile
             self.sms.send_sms(
                 phone,
-                f"Welcome {full_name}.\nYour AgriTech AI account has been created successfully.\nDial *384# to access services.",
+                "Welcome to AgriTech AI! Account created.\n"
+                "To complete your profile, reply with:\n"
+                "NAME: your full name\n"
+                "Example: NAME: John Kamau",
             )
             return menu.REG_SUCCESS
 
@@ -139,7 +137,7 @@ class USSDService:
 
         # Authenticated — show main menu or handle service selection
         if depth == 2:
-            return menu.MAIN_MENU.format(name=farmer.full_name.split()[0])
+            return menu.MAIN_MENU
 
         service_choice = parts[2].strip()
 
