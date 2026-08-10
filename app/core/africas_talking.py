@@ -26,7 +26,7 @@ class AfricasTalkingClient:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.username and self.api_key)
+        return bool(self.username.strip() and self.api_key)
 
     def send_sms(self, phone_number: str, message: str) -> dict:
         """
@@ -48,11 +48,14 @@ class AfricasTalkingClient:
         }
 
         data = {
-            "username": self.username,
+            "username": self.username.strip(),
             "to": phone_number,
             "message": message,
-            "from": SMS_SENDER_ID,
         }
+
+        # Only send sender ID in production — sandbox rejects custom sender IDs
+        if self.username.strip() != "sandbox":
+            data["from"] = SMS_SENDER_ID
 
         try:
             # ---- Copilot Improvement ----
