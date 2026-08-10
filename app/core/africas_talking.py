@@ -8,6 +8,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 SMS_API_URL = "https://api.africastalking.com/version1/messaging"
+SMS_SENDER_ID = "3797"
 
 
 class AfricasTalkingClient:
@@ -50,6 +51,7 @@ class AfricasTalkingClient:
             "username": self.username,
             "to": phone_number,
             "message": message,
+            "from": SMS_SENDER_ID,
         }
 
         try:

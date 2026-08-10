@@ -12,16 +12,13 @@ ABOUT = (
 )
 
 # ── Registration ──────────────────────────────────────────────────────
-REG_NAME = "CON Enter your full name:"
 REG_ID = "CON Enter your National ID number:"
-REG_COUNTY = "CON Enter your county name (e.g. Nairobi, Kisumu, Nakuru):"
 REG_PIN = "CON Create a 4-digit PIN:"
 REG_PIN_CONFIRM = "CON Confirm your 4-digit PIN:"
 REG_SUCCESS = "END Registration successful! Check your SMS for details."
 REG_PIN_MISMATCH = "END PINs do not match. Please dial again to register."
 REG_PHONE_EXISTS = "END This phone number is already registered. Dial *384# to login."
 REG_ID_EXISTS = "END This National ID is already registered. Dial *384# to login."
-REG_COUNTY_NOT_FOUND = "END County not found. Please dial again and enter a valid county name."
 
 # ── Login ─────────────────────────────────────────────────────────────
 LOGIN_PIN = "CON Enter your 4-digit PIN:"
@@ -30,7 +27,7 @@ NOT_REGISTERED = "END Phone not registered. Select 1 to register."
 
 # ── Main Menu ─────────────────────────────────────────────────────────
 MAIN_MENU = (
-    "CON Welcome back, {name}\n"
+    "CON AgriTech AI Menu\n"
     "1. Crop Recommendations\n"
     "2. Livestock Recommendations\n"
     "3. Weather Alerts\n"

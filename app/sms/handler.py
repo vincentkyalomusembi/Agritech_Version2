@@ -42,6 +42,14 @@ class SMSHandler:
 
         command = text.upper()
 
+        # Profile setup commands sent after registration
+        if text.upper().startswith("NAME:"):
+            self._handle_name_update(phone, farmer, text)
+            return
+        if text.upper().startswith("COUNTY:"):
+            self._handle_county_update(phone, farmer, text)
+            return
+
         # Global commands
         if command == "STOP":
             self._cancel_active_session(phone, farmer)
@@ -243,3 +251,39 @@ class SMSHandler:
             "add_livestock": "Enter the livestock type to add:",
         }
         return questions.get(action, "")
+
+    def _handle_name_update(self, phone: str, farmer, text: str) -> None:
+        name = text[5:].strip()  # strip "NAME:"
+        if not name:
+            self.sms.send_sms(phone, "Name cannot be empty. Reply: NAME: your full name")
+            return
+        farmer.full_name = name
+        self.farmer_repo.update(farmer)
+        self.sms.send_sms(
+            phone,
+            f"Name updated to {name}.\n"
+            "Now reply with your county:\nCOUNTY: your county name\n"
+            "Example: COUNTY: Nairobi",
+        )
+
+    def _handle_county_update(self, phone: str, farmer, text: str) -> None:
+        from app.counties.repository import CountyRepository
+        county_name = text[7:].strip()  # strip "COUNTY:"
+        if not county_name:
+            self.sms.send_sms(phone, "County cannot be empty. Reply: COUNTY: your county name")
+            return
+        county = CountyRepository(self.db).get_by_name_fuzzy(county_name)
+        if not county:
+            self.sms.send_sms(
+                phone,
+                f"County '{county_name}' not found. Please try again.\nExample: COUNTY: Nairobi",
+            )
+            return
+        farmer.county_id = county.id
+        self.farmer_repo.update(farmer)
+        self.sms.send_sms(
+            phone,
+            f"Profile complete! Welcome {farmer.full_name}.\n"
+            f"County: {county.name}\n"
+            "Dial *384# to access all services.",
+        )
