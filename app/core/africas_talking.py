@@ -1,90 +1,55 @@
 import logging
-from functools import lru_cache
 
-import httpx
+import africastalking
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-SMS_API_URL = "https://api.africastalking.com/version1/messaging"
 SMS_SENDER_ID = "3797"
+
+# Lazy-init — same pattern as SokoSure
+_sms_client = None
+
+
+def _sms():
+    global _sms_client
+    if _sms_client is None:
+        africastalking.initialize(
+            settings.AFRICAS_TALKING_USERNAME.strip(),
+            settings.AFRICAS_TALKING_API_KEY.strip(),
+        )
+        _sms_client = africastalking.SMS
+    return _sms_client
 
 
 class AfricasTalkingClient:
-    """
-    Client for Africa's Talking SMS API.
-    """
-
-    def __init__(
-        self,
-        username: str | None = None,
-        api_key: str | None = None,
-    ):
-        self.username = username or settings.AFRICAS_TALKING_USERNAME
-        self.api_key = api_key or settings.AFRICAS_TALKING_API_KEY
+    """Africa's Talking SMS client using the official SDK."""
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.username.strip() and self.api_key)
+        return bool(
+            settings.AFRICAS_TALKING_USERNAME.strip()
+            and settings.AFRICAS_TALKING_API_KEY.strip()
+        )
 
     def send_sms(self, phone_number: str, message: str) -> dict:
-        """
-        Send an SMS via Africa's Talking.
-        """
-
         if not self.is_configured:
-            logger.warning(
-                "Africa's Talking credentials not configured; SMS not sent."
-            )
-            return {
-                "status": "skipped",
-                "reason": "Africa's Talking credentials not configured.",
-            }
-
-        headers = {
-            "apiKey": self.api_key,
-            "Accept": "application/json",
-        }
-
-        data = {
-            "username": self.username.strip(),
-            "to": phone_number,
-            "message": message,
-        }
-
-        # Only send sender ID in production — sandbox rejects custom sender IDs
-        if self.username.strip() != "sandbox":
-            data["from"] = SMS_SENDER_ID
+            logger.warning("Africa's Talking credentials not configured; SMS not sent.")
+            return {"status": "skipped", "reason": "credentials not configured"}
 
         try:
-            # ---- Copilot Improvement ----
-            # Reuse a process-local HTTP client to avoid TCP/TLS setup on each
-            # SMS handoff; timeout remains bounded by application settings.
-            # ---- End Improvement ----
-            response = get_http_client().post(
-                SMS_API_URL,
-                headers=headers,
-                data=data,
-            )
-            response.raise_for_status()
-            return response.json()
+            is_sandbox = settings.AFRICAS_TALKING_USERNAME.strip() == "sandbox"
+            # Sandbox does not accept custom sender IDs
+            sender = None if is_sandbox else SMS_SENDER_ID
 
-        except httpx.HTTPError as exc:
-            logger.error("Failed to send SMS via Africa's Talking: %s", exc)
-            return {
-                "status": "error",
-                "reason": str(exc),
-            }
+            response = _sms().send(message, [phone_number], sender_id=sender)
+            logger.info("SMS sent to %s: %s", phone_number, response)
+            return response
+        except Exception as exc:
+            logger.error("Failed to send SMS to %s: %s", phone_number, exc)
+            return {"status": "error", "reason": str(exc)}
 
 
 def get_africas_talking_client() -> AfricasTalkingClient:
     return AfricasTalkingClient()
-
-
-# ---- Copilot Improvement ----
-# One shared client enables connection pooling for low-latency outbound SMS.
-# ---- End Improvement ----
-@lru_cache(maxsize=1)
-def get_http_client() -> httpx.Client:
-    return httpx.Client(timeout=settings.OUTBOUND_HTTP_TIMEOUT_SECONDS)
