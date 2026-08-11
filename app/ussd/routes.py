@@ -31,7 +31,7 @@ def ussd_callback(
     if settings.AFRICAS_TALKING_USSD_SERVICE_CODE and serviceCode != settings.AFRICAS_TALKING_USSD_SERVICE_CODE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid USSD service code.")
 
-    service = USSDService(db)
+    service = USSDService(db, background_tasks=background_tasks)
     response = service.handle(
         phone_number=phoneNumber,
         text=text,

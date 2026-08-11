@@ -22,7 +22,7 @@ from app.ussd import menu
 
 
 class USSDService:
-    def __init__(self, db: Session, sms_client: AfricasTalkingClient | None = None):
+    def __init__(self, db: Session, sms_client: AfricasTalkingClient | None = None, background_tasks=None):
         self.db = db
         self.farmer_repo = FarmerRepository(db)
         self.county_repo = CountyRepository(db)
@@ -30,6 +30,7 @@ class USSDService:
         self.session_repo = SMSSessionRepository(db)
         self.sms = sms_client or AfricasTalkingClient()
         self.redis = get_redis()
+        self.background_tasks = background_tasks
 
     def handle(self, phone_number: str, text: str, callback_session_id: str | None = None) -> str:
         phone = normalize_phone_number(phone_number)
@@ -103,8 +104,8 @@ class USSDService:
             )
             self.farmer_repo.create(farmer)
 
-            # Send SMS asking farmer to complete their profile
-            self.sms.send_sms(
+            # Dispatch SMS after USSD response is returned
+            self._send_sms(
                 phone,
                 "Welcome to AgriTech AI! Account created.\n"
                 "To complete your profile, reply with:\n"
@@ -183,9 +184,8 @@ class USSDService:
                 callback_text=text,
                 response_text=confirmation,
             )
-            # Send first question via SMS
             first_q = flow[0]["question"].format(name=farmer.full_name.split()[0], plan="")
-            self.sms.send_sms(farmer.phone_number, first_q)
+            self._send_sms(farmer.phone_number, first_q)
 
         return confirmation
 
@@ -206,3 +206,10 @@ class USSDService:
             run_weather_alerts.delay(str(session.id), str(farmer.id), farmer.phone_number)
         elif service_key == "market_prices":
             run_market_prices.delay(str(session.id), str(farmer.id), farmer.phone_number)
+
+    def _send_sms(self, phone: str, message: str) -> None:
+        """Send SMS via background task if available, otherwise send directly."""
+        if self.background_tasks:
+            self.background_tasks.add_task(self.sms.send_sms, phone, message)
+        else:
+            self.sms.send_sms(phone, message)
