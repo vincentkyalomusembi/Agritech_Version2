@@ -108,9 +108,10 @@ class USSDService:
             self._send_sms(
                 phone,
                 "Welcome to AgriTech AI! Account created.\n"
-                "To complete your profile, reply with:\n"
-                "NAME: your full name\n"
-                "Example: NAME: John Kamau",
+                "Step 1 - Reply with your name:\n"
+                "NAME: John Kamau\n\n"
+                "Step 2 - Then reply with your county:\n"
+                "COUNTY: Nairobi",
             )
             return menu.REG_SUCCESS
 

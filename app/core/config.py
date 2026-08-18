@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     AFRICAS_TALKING_API_KEY: str = Field(default="", repr=False)
     AFRICAS_TALKING_WEBHOOK_SECRET: str = Field(default="", repr=False)
     AFRICAS_TALKING_USSD_SERVICE_CODE: str = ""
+    AFRICAS_TALKING_SHORTCODE: str = "3797"
     OUTBOUND_HTTP_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=60)
 
     GEE_PROJECT_ID: str = ""
