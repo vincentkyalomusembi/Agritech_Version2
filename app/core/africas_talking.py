@@ -6,10 +6,14 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-SMS_SENDER_ID = "3797"
-
 # Lazy-init — same pattern as SokoSure
 _sms_client = None
+
+
+def _reset_sms_client():
+    """Call this after changing credentials (e.g. switching sandbox → live)."""
+    global _sms_client
+    _sms_client = None
 
 
 def _sms():
@@ -39,11 +43,11 @@ class AfricasTalkingClient:
             return {"status": "skipped", "reason": "credentials not configured"}
 
         try:
-            is_sandbox = settings.AFRICAS_TALKING_USERNAME.strip() == "sandbox"
-            # Sandbox does not accept custom sender IDs
-            sender = None if is_sandbox else SMS_SENDER_ID
-
-            response = _sms().send(message, [phone_number], sender_id=sender)
+            response = _sms().send(
+                message,
+                [phone_number],
+                sender_id=settings.AFRICAS_TALKING_SHORTCODE,
+            )
             logger.info("SMS sent to %s: %s", phone_number, response)
             return response
         except Exception as exc:
