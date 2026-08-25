@@ -56,6 +56,6 @@ def root():
     return {"message": "Agritech AI API is running."}
 
 
-@app.api_route("/health", methods=["GET", "HEAD"])
-async def health():
-    return {"status": "ok"}
+# @app.api_route("/health", methods=["GET", "HEAD"])
+# async def health():
+#     return {"status": "ok"}
