@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     GEE_PROJECT_ID: str = ""
     GEE_SERVICE_ACCOUNT: str = ""
     GEE_CREDENTIALS: str = ""
+    GEE_CREDENTIALS_JSON: str = Field(default="", repr=False)
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
