@@ -261,9 +261,8 @@ class SMSHandler:
         self.farmer_repo.update(farmer)
         self.sms.send_sms(
             phone,
-            f"Name updated to {name}.\n"
-            "Now reply with your county:\nCOUNTY: your county name\n"
-            "Example: COUNTY: Nairobi",
+            f"Thanks {name}! Now reply with your county.\n"
+            "Example: COUNTY: [your county]",
         )
 
     def _handle_county_update(self, phone: str, farmer, text: str) -> None:
