@@ -1,11 +1,19 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, Form
+from fastapi import APIRouter, BackgroundTasks, Form
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
 
-from app.database.sessions import get_db
+from app.database.sessions import SessionLocal
 from app.sms.handler import SMSHandler
 
 router = APIRouter(tags=["SMS"])
+
+
+def _handle_sms(phone_number: str, text: str, message_id: str | None) -> None:
+    """Run SMS handler with its own DB session (safe for background tasks)."""
+    db = SessionLocal()
+    try:
+        SMSHandler(db).handle(phone_number=phone_number, text=text, message_id=message_id)
+    finally:
+        db.close()
 
 
 @router.post("/sms")
@@ -17,15 +25,9 @@ def sms_callback(
     id: str | None = Form(default=None),
     date: str | None = Form(default=None),
     linkId: str | None = Form(default=None),
-    db: Session = Depends(get_db),
 ):
     """Africa's Talking inbound SMS webhook."""
-    background_tasks.add_task(
-        SMSHandler(db).handle,
-        phone_number=from_,
-        text=text,
-        message_id=id,
-    )
+    background_tasks.add_task(_handle_sms, phone_number=from_, text=text, message_id=id)
     return JSONResponse({"status": "received"})
 
 
