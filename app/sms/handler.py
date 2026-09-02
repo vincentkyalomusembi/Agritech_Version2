@@ -42,12 +42,22 @@ class SMSHandler:
 
         command = text.upper()
 
-        # Profile setup commands sent after registration
+        # Profile setup — detect by prefix or by incomplete profile state
         if text.upper().startswith("NAME:"):
             self._handle_name_update(phone, farmer, text)
             return
         if text.upper().startswith("COUNTY:"):
             self._handle_county_update(phone, farmer, text)
+            return
+
+        # New farmer awaiting name — accept plain text as name
+        if farmer.full_name == "New Farmer":
+            self._handle_name_update(phone, farmer, "NAME: " + text)
+            return
+
+        # Farmer has name but awaiting county (Redis flag set during registration)
+        if self.redis.get(f"awaiting_county:{phone}"):
+            self._handle_county_update(phone, farmer, "COUNTY: " + text)
             return
 
         # Global commands
@@ -255,34 +265,28 @@ class SMSHandler:
     def _handle_name_update(self, phone: str, farmer, text: str) -> None:
         name = text[5:].strip()  # strip "NAME:"
         if not name:
-            self.sms.send_sms(phone, "Name cannot be empty. Reply: NAME: your full name")
+            self.sms.send_sms(phone, "What is your full name?")
             return
         farmer.full_name = name
         self.farmer_repo.update(farmer)
-        self.sms.send_sms(
-            phone,
-            f"Thanks {name}! Now reply with your county.\n"
-            "Example: COUNTY: [your county]",
-        )
+        self.redis.setex(f"awaiting_county:{phone}", 3600, "1")  # 1 hour TTL
+        self.sms.send_sms(phone, f"Thanks {name}! Which county are you in?")
 
     def _handle_county_update(self, phone: str, farmer, text: str) -> None:
         from app.counties.repository import CountyRepository
         county_name = text[7:].strip()  # strip "COUNTY:"
         if not county_name:
-            self.sms.send_sms(phone, "County cannot be empty. Reply: COUNTY: your county name")
+            self.sms.send_sms(phone, "Which county are you in?")
             return
         county = CountyRepository(self.db).get_by_name_fuzzy(county_name)
         if not county:
-            self.sms.send_sms(
-                phone,
-                f"County '{county_name}' not found. Please try again.\nExample: COUNTY: Nairobi",
-            )
+            self.sms.send_sms(phone, f"County '{county_name}' not found. Try again, e.g. Nairobi, Kisumu, Nakuru.")
             return
         farmer.county_id = county.id
         self.farmer_repo.update(farmer)
+        self.redis.delete(f"awaiting_county:{phone}")
         self.sms.send_sms(
             phone,
-            f"Profile complete! Welcome {farmer.full_name}.\n"
-            f"County: {county.name}\n"
+            f"Profile complete! Welcome {farmer.full_name}, {county.name}.\n"
             "Dial *384# to access all services.",
         )
