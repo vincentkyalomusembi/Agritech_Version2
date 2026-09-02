@@ -40,25 +40,25 @@ class SMSHandler:
             self.sms.send_sms(phone, "Phone not registered. Dial *384# to register.")
             return
 
-        command = text.upper()
+        # ── Profile completion (new farmers only) ────────────────────
+        if not farmer.profile_complete:
+            if farmer.full_name == "New Farmer":
+                # Step 1: awaiting name — accept any text as their name
+                self._handle_name_update(phone, farmer, text)
+            else:
+                # Step 2: name saved, awaiting county
+                self._handle_county_update(phone, farmer, text)
+            return
 
-        # Profile setup — detect by prefix or by incomplete profile state
+        # ── Allow prefix commands even after profile complete ────────
         if text.upper().startswith("NAME:"):
-            self._handle_name_update(phone, farmer, text)
+            self._handle_name_update(phone, farmer, text[5:].strip())
             return
         if text.upper().startswith("COUNTY:"):
-            self._handle_county_update(phone, farmer, text)
+            self._handle_county_update(phone, farmer, text[7:].strip())
             return
 
-        # New farmer awaiting name — accept plain text as name
-        if farmer.full_name == "New Farmer":
-            self._handle_name_update(phone, farmer, "NAME: " + text)
-            return
-
-        # Farmer has name but awaiting county (Redis flag set during registration)
-        if self.redis.get(f"awaiting_county:{phone}"):
-            self._handle_county_update(phone, farmer, "COUNTY: " + text)
-            return
+        command = text.upper()
 
         # Global commands
         if command == "STOP":
@@ -262,19 +262,16 @@ class SMSHandler:
         }
         return questions.get(action, "")
 
-    def _handle_name_update(self, phone: str, farmer, text: str) -> None:
-        name = text[5:].strip()  # strip "NAME:"
+    def _handle_name_update(self, phone: str, farmer, name: str) -> None:
         if not name:
             self.sms.send_sms(phone, "What is your full name?")
             return
         farmer.full_name = name
         self.farmer_repo.update(farmer)
-        self.redis.setex(f"awaiting_county:{phone}", 3600, "1")  # 1 hour TTL
         self.sms.send_sms(phone, f"Thanks {name}! Which county are you in?")
 
-    def _handle_county_update(self, phone: str, farmer, text: str) -> None:
+    def _handle_county_update(self, phone: str, farmer, county_name: str) -> None:
         from app.counties.repository import CountyRepository
-        county_name = text[7:].strip()  # strip "COUNTY:"
         if not county_name:
             self.sms.send_sms(phone, "Which county are you in?")
             return
@@ -283,8 +280,8 @@ class SMSHandler:
             self.sms.send_sms(phone, f"County '{county_name}' not found. Try again, e.g. Nairobi, Kisumu, Nakuru.")
             return
         farmer.county_id = county.id
+        farmer.profile_complete = True
         self.farmer_repo.update(farmer)
-        self.redis.delete(f"awaiting_county:{phone}")
         self.sms.send_sms(
             phone,
             f"Profile complete! Welcome {farmer.full_name}, {county.name}.\n"
