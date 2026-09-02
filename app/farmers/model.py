@@ -58,6 +58,13 @@ class Farmer(Base):
         default=True,
     )
 
+    profile_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
+    )
+
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
