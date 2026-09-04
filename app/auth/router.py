@@ -11,6 +11,7 @@ from app.auth.schema import (
     LoginRequest,
     TokenResponse,
 )
+from app.farmers.schema import FarmerResponse
 from app.auth.service import login_farmer
 from app.database.sessions import get_db
 from app.core.rate_limit import limit_login_attempts
@@ -45,7 +46,7 @@ def login(
         )
 
 
-@router.get("/me")
+@router.get("/me", response_model=FarmerResponse)
 def get_me(
     current_farmer: Farmer = Depends(get_current_farmer),
 ):

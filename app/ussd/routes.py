@@ -1,10 +1,9 @@
-import hmac
-
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header, HTTPException, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.webhooks import verify_webhook_secret
 from app.database.sessions import get_db
 from app.ussd.service import USSDService
 
@@ -23,10 +22,7 @@ def ussd_callback(
     db: Session = Depends(get_db),
 ):
     """Africa's Talking USSD callback endpoint."""
-    if settings.AFRICAS_TALKING_WEBHOOK_SECRET and not hmac.compare_digest(
-        webhook_secret or "", settings.AFRICAS_TALKING_WEBHOOK_SECRET
-    ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook credentials.")
+    verify_webhook_secret(webhook_secret)
 
     if settings.AFRICAS_TALKING_USSD_SERVICE_CODE and serviceCode != settings.AFRICAS_TALKING_USSD_SERVICE_CODE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid USSD service code.")

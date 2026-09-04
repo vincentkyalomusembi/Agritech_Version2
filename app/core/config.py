@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     JWT_ISSUER: str = "agritech-ai"
     JWT_AUDIENCE: str = "agritech-farmers"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=5, le=1440)
+    ADMIN_FARMER_IDS: str = ""
 
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""

@@ -1,9 +1,12 @@
 from jose import JWTError
+from uuid import UUID
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.auth.security import decode_access_token
+from app.core.config import settings
 from app.database.sessions import get_db
 from app.farmers.model import Farmer
 
@@ -46,7 +49,31 @@ def get_current_farmer(
         .first()
     )
 
-    if farmer is None:
+    if farmer is None or not farmer.is_active:
         raise credentials_exception
 
     return farmer
+
+
+def require_admin(
+    current_farmer: Farmer = Depends(get_current_farmer),
+) -> Farmer:
+    """Require a farmer identity explicitly configured as an administrator."""
+
+    configured_ids = {
+        value.strip()
+        for value in settings.ADMIN_FARMER_IDS.split(",")
+        if value.strip()
+    }
+    try:
+        is_admin = str(UUID(str(current_farmer.id))) in configured_ids
+    except ValueError:
+        is_admin = False
+
+    if not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required.",
+        )
+
+    return current_farmer
