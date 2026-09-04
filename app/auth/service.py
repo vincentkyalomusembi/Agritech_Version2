@@ -61,7 +61,8 @@ def login_farmer(
 
     access_token = create_access_token(
         {
-            "farmer_id": str(farmer.id)
+            "sub": str(farmer.id),
+            "token_type": "farmer",
         }
     )
 

@@ -1,0 +1,69 @@
+envVarGroups:
+  - name: agritech-runtime
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: AFRICAS_TALKING_USERNAME
+        sync: false
+      - key: AFRICAS_TALKING_API_KEY
+        sync: false
+      - key: AFRICAS_TALKING_WEBHOOK_SECRET
+        sync: false
+      - key: AFRICAS_TALKING_USSD_SERVICE_CODE
+        sync: false
+      - key: AFRICAS_TALKING_SHORTCODE
+        value: "3797"
+      - key: GEE_PROJECT_ID
+        sync: false
+      - key: GEE_SERVICE_ACCOUNT
+        sync: false
+      - key: GEE_CREDENTIALS_JSON
+        sync: false
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: MPESA_CALLBACK_URL
+        sync: false
+      - key: MPESA_ENV
+        value: production
+
+services:
+  - type: web
+    name: agritech-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: agritech-runtime
+
+  - type: worker
+    name: agritech-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.core.celery_app:celery_app worker --loglevel=info --concurrency=2
+    envVars:
+      - fromGroup: agritech-runtime
+
+  - type: worker
+    name: agritech-beat
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.core.celery_app:celery_app beat --loglevel=info
+    envVars:
+      - fromGroup: agritech-runtime

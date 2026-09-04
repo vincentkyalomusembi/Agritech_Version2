@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
+from app.auth.dependencies import get_current_farmer, require_admin
+from app.farmers.model import Farmer
 from app.expert_requests.exceptions import (
     ExpertRequestError,
     ExpertRequestNotFoundError,
@@ -60,9 +62,16 @@ def _handle_expert_request_error(exc: ExpertRequestError) -> HTTPException:
 )
 def create_expert_request(
     payload: ExpertRequestCreate,
+    current_farmer: Farmer = Depends(get_current_farmer),
     db: Session = Depends(get_db),
 ):
     """Submit a new expert assistance request."""
+
+    if payload.farmer_id != current_farmer.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only create requests for yourself.",
+        )
 
     service = ExpertRequestService(db)
 
@@ -85,9 +94,10 @@ def create_expert_request(
 )
 def update_expert_request_status(
     payload: ExpertRequestStatusUpdate,
+    _: Farmer = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Update the status of an existing expert request."""
+    """Update request status; expert/admin identity is required."""
 
     service = ExpertRequestService(db)
 

@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
+from app.auth.dependencies import get_current_farmer
+from app.farmers.model import Farmer
 from app.experts.exceptions import ExpertError, ExpertNotFoundError
 from app.experts.model import ExpertType
 from app.experts.schema import ExpertListResponse
@@ -40,6 +42,7 @@ def list_experts(
     is_available: bool | None = Query(default=None),
     limit: int | None = Query(default=None, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    _: Farmer = Depends(get_current_farmer),
     db: Session = Depends(get_db),
 ):
     """

@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
+from app.auth.dependencies import require_admin
+from app.farmers.model import Farmer
 from app.products.model import ProductCategory
 from app.products.schema import ProductCreate, ProductUpdate, ProductResponse
 from app.products.service import ProductService
@@ -15,7 +17,7 @@ router = APIRouter(
 
 
 @router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
-def create_product(data: ProductCreate, db: Session = Depends(get_db)):
+def create_product(data: ProductCreate, _: Farmer = Depends(require_admin), db: Session = Depends(get_db)):
     """Add a new agricultural product to the catalogue."""
     return ProductService(db).create(data)
 
@@ -44,12 +46,12 @@ def get_product(product_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.patch("/{product_id}", response_model=ProductResponse)
-def update_product(product_id: UUID, data: ProductUpdate, db: Session = Depends(get_db)):
+def update_product(product_id: UUID, data: ProductUpdate, _: Farmer = Depends(require_admin), db: Session = Depends(get_db)):
     """Partial update — only send the fields you want to change."""
     return ProductService(db).update(product_id, data)
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_product(product_id: UUID, db: Session = Depends(get_db)):
+def delete_product(product_id: UUID, _: Farmer = Depends(require_admin), db: Session = Depends(get_db)):
     """Remove a product from the catalogue."""
     ProductService(db).delete(product_id)
