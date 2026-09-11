@@ -104,10 +104,21 @@ class RecommendationContextService:
         
         # 6. Get GEE environmental information
         
-        environment = self.environment.get_environment(
-            latitude,
-            longitude,
-        )
+        # GEE data may occasionally be unavailable for a location.
+        # A missing environmental dataset should not prevent the
+        # farmer from receiving a recommendation.
+        try:
+            environment = self.environment.get_environment(
+                latitude,
+                longitude,
+            )
+        except Exception as exc:
+            print(f"GEE environment unavailable: {exc}")
+
+            environment = {
+                "ndvi": None,
+                "rainfall": None,
+            }
 
         
         # 7. Get market prices for the farmer's county
@@ -128,7 +139,7 @@ class RecommendationContextService:
                     "maximum_price": price.maximum_price,
                     "average_price": price.average_price,
                     "unit": price.unit,
-                    "price_date": price.price_date.isoformat(),
+                    "price_date": str(price.price_date),
                     "source": price.source,
                 }
             )
