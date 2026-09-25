@@ -50,7 +50,7 @@ class GeminiProvider(AIProvider):
         )
 
         response = self.client.models.generate_content(
-            model="gemini-3.7-flash",
+            model=settings.GEMINI_MODEL,
             contents=prompt,
         )
 

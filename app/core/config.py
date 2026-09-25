@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     OPENWEATHER_API_KEY: str = ""
 
     AFRICAS_TALKING_USERNAME: str = ""
