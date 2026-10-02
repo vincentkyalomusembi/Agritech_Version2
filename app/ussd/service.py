@@ -147,6 +147,12 @@ class USSDService:
             return menu.INVALID_OPTION
 
         service_key = menu.MENU_OPTIONS[service_choice]
+        from app.pricing.service import FarmerSizeService
+        if not FarmerSizeService(self.db).can_use_service(farmer.id, service_key):
+            return (
+                "END This service needs a paid size class. "
+                "Dial *384# and choose 8 to see your monthly price."
+            )
         return self._launch_service(farmer, service_key, cb_id, text)
 
     # ── Service launcher ──────────────────────────────────────────────
@@ -174,18 +180,38 @@ class USSDService:
         # Start SMS conversation session
         flow = FLOWS.get(service_key, [])
         if flow:
+            session_data = None
+            first_q = flow[0]["question"].format(name=farmer.full_name.split()[0], plan="")
+            if service_key == "subscription":
+                session_data, first_q = self._subscription_quote_payload(farmer)
             session = self.session_service.start_session(
                 farmer_id=farmer.id,
                 session_type=session_type,
                 current_step=0,
+                session_data=session_data,
                 callback_session_id=cb_id,
                 callback_text=text,
                 response_text=confirmation,
             )
-            first_q = flow[0]["question"].format(name=farmer.full_name.split()[0], plan="")
             self._send_sms(farmer.phone_number, first_q)
 
         return confirmation
+
+    def _subscription_quote_payload(self, farmer) -> tuple[dict, str]:
+        from app.pricing.service import QuoteService
+
+        quote = QuoteService(self.db).create_quote(farmer.id)
+        data = {
+            "quote_id": str(quote.id),
+            "size_class": quote.size_class,
+            "amount_kes": quote.amount_kes,
+            "has_size_input": quote.acres_used > 0 or quote.tlu_used > 0,
+        }
+        sms = quote.sms_text or (
+            f"Your farm size: {quote.size_class}. Monthly: KES {quote.amount_kes}. "
+            "Reply 1 to pay, 2 to cancel."
+        )
+        return data, sms
 
     def _dispatch_no_question_service(self, farmer, service_key: str, cb_id: str | None, text: str, confirmation: str) -> None:
         from app.tasks.recommendation_tasks import run_weather_alerts, run_market_prices

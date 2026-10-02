@@ -5,6 +5,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     func,
 )
@@ -67,4 +68,26 @@ class Subscription(Base):
         String(50),
         default="Premium",
         nullable=False,
-   )
+    )
+
+    size_class: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        index=True,
+    )
+
+    amount_kes: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    quote_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("subscription_quotes.id"),
+        nullable=True,
+    )
+
+    rule_version: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )

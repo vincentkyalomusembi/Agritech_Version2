@@ -107,21 +107,23 @@ PROFILE_FLOW = [
 
 SUBSCRIPTION_FLOW = [
     {
-        "key": "plan",
-        "question": "Hi {name}, choose a subscription plan:\n1. Basic - Free\n2. Standard - KES 50/month\n3. Premium - KES 150/month\nReply with 1, 2, or 3.",
-        "choices": {"1": "Basic", "2": "Standard", "3": "Premium"},
-    },
-    {
         "key": "confirmed",
-        "question": "Confirm subscription to {plan}?\n1. Yes\n2. No",
+        "question": (
+            "Hi {name}, reply 1 to pay the quoted monthly amount or 2 to cancel."
+        ),
         "choices": {"1": "Yes", "2": "No"},
     },
 ]
 
+# Legacy aliases kept so older SMS sessions and activate_subscription() still resolve.
 PLAN_PRICES = {
     "Basic": 0,
-    "Standard": 50,
-    "Premium": 150,
+    "Standard": 20,
+    "Premium": 40,
+    "Micro": 0,
+    "Small": 20,
+    "Medium": 40,
+    "Large": 70,
 }
 
 # Services that need no questions — fire-and-forget

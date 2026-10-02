@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     JWT_AUDIENCE: str = "agritech-farmers"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=5, le=1440)
     ADMIN_FARMER_IDS: str = ""
+    STAFF_JWT_AUDIENCE: str = "agritech-staff"
+    STAFF_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=5, le=1440)
+    STAFF_REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=14, ge=1, le=90)
+    STAFF_BOOTSTRAP_PHONE: str = ""
+    STAFF_BOOTSTRAP_PASSWORD: str = Field(default="", repr=False)
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
