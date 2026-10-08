@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
 from app.auth.dependencies import require_admin
+from app.staff.dependencies import require_admin_or_staff
 from app.farmers.model import Farmer
 from app.advisory.model import AdvisoryCategory
 from app.advisory.schema import AdvisoryCreate, AdvisoryUpdate, AdvisoryResponse
@@ -17,7 +18,7 @@ router = APIRouter(
 
 
 @router.post("/", response_model=AdvisoryResponse, status_code=status.HTTP_201_CREATED)
-def create_advisory(data: AdvisoryCreate, _: Farmer = Depends(require_admin), db: Session = Depends(get_db)):
+def create_advisory(data: AdvisoryCreate, _: Farmer | object = Depends(require_admin_or_staff), db: Session = Depends(get_db)):
     """Create a new agricultural advisory. Leave county_id blank for national-level."""
     return AdvisoryService(db).create(data)
 
@@ -52,12 +53,12 @@ def get_advisory(advisory_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.patch("/{advisory_id}", response_model=AdvisoryResponse)
-def update_advisory(advisory_id: UUID, data: AdvisoryUpdate, _: Farmer = Depends(require_admin), db: Session = Depends(get_db)):
+def update_advisory(advisory_id: UUID, data: AdvisoryUpdate, _: Farmer | object = Depends(require_admin_or_staff), db: Session = Depends(get_db)):
     """Partial update — only send the fields you want to change."""
     return AdvisoryService(db).update(advisory_id, data)
 
 
 @router.delete("/{advisory_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_advisory(advisory_id: UUID, _: Farmer = Depends(require_admin), db: Session = Depends(get_db)):
+def delete_advisory(advisory_id: UUID, _: Farmer | object = Depends(require_admin_or_staff), db: Session = Depends(get_db)):
     """Remove an advisory permanently."""
     AdvisoryService(db).delete(advisory_id)

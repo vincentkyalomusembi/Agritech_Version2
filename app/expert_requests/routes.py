@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
 from app.auth.dependencies import get_current_farmer, require_admin
+from app.staff.dependencies import require_admin_or_staff
 from app.farmers.model import Farmer
 from app.expert_requests.exceptions import (
     ExpertRequestError,
@@ -94,7 +95,7 @@ def create_expert_request(
 )
 def update_expert_request_status(
     payload: ExpertRequestStatusUpdate,
-    _: Farmer = Depends(require_admin),
+    _: Farmer | object = Depends(require_admin_or_staff),
     db: Session = Depends(get_db),
 ):
     """Update request status; expert/admin identity is required."""

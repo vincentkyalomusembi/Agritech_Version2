@@ -11,6 +11,7 @@ celery_app = Celery(
         "app.tasks.session_tasks",
         "app.tasks.notification_tasks",
         "app.tasks.mpesa_tasks",
+        "app.tasks.subscription_tasks",
     ],
 )
 

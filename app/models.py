@@ -21,3 +21,6 @@ from app.recommendations.model import Recommendation
 from app.notifications.model import Notification
 from app.sms_sessions.model import SMSSession
 from app.advisory.model import Advisory
+from app.pricing.model import PricingRule, SubscriptionQuote
+from app.staff.model import StaffUser
+from app.audit.model import AuditLog

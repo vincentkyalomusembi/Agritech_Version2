@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.pricing.engine import normalize_plan_name
 from app.subscriptions.exceptions import FarmerNotFoundError
 from app.subscriptions.model import Subscription
 from app.subscriptions.repository import SubscriptionRepository
@@ -54,10 +55,16 @@ class SubscriptionService:
         end_date: date | None = None,
         *,
         commit: bool = True,
+        size_class: str | None = None,
+        amount_kes: int | None = None,
+        quote_id: UUID | None = None,
+        rule_version: int | None = None,
     ) -> SubscriptionResponse:
         """Activate or overwrite a farmer's premium subscription."""
 
         self._ensure_farmer_exists(farmer_id)
+        resolved_class = size_class or normalize_plan_name(plan_name)
+        resolved_plan = resolved_class
         resolved_start, resolved_end = self._resolve_dates(
             start_date,
             end_date,
@@ -73,7 +80,11 @@ class SubscriptionService:
                 subscription = Subscription(
                     farmer_id=farmer_id,
                     is_active=True,
-                    plan_name=plan_name,
+                    plan_name=resolved_plan,
+                    size_class=resolved_class,
+                    amount_kes=amount_kes,
+                    quote_id=quote_id,
+                    rule_version=rule_version,
                     start_date=resolved_start,
                     end_date=resolved_end,
                 )
@@ -85,13 +96,27 @@ class SubscriptionService:
                     if subscription is None:
                         raise
                     subscription.is_active = True
-                    subscription.plan_name = plan_name
+                    subscription.plan_name = resolved_plan
+                    subscription.size_class = resolved_class
+                    if amount_kes is not None:
+                        subscription.amount_kes = amount_kes
+                    if quote_id is not None:
+                        subscription.quote_id = quote_id
+                    if rule_version is not None:
+                        subscription.rule_version = rule_version
                     subscription.start_date = resolved_start
                     subscription.end_date = resolved_end
                     self.repository.update(subscription)
             else:
                 subscription.is_active = True
-                subscription.plan_name = plan_name
+                subscription.plan_name = resolved_plan
+                subscription.size_class = resolved_class
+                if amount_kes is not None:
+                    subscription.amount_kes = amount_kes
+                if quote_id is not None:
+                    subscription.quote_id = quote_id
+                if rule_version is not None:
+                    subscription.rule_version = rule_version
                 subscription.start_date = resolved_start
                 subscription.end_date = resolved_end
                 self.repository.update(subscription)

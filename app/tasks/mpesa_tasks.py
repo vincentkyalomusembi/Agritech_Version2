@@ -62,7 +62,9 @@ def activate_free_subscription(session_id: str, farmer_id: str, phone: str, plan
     """Activate a free (Basic) subscription immediately."""
     db = SessionLocal()
     try:
-        _activate_subscription(db, farmer_id, plan)
+        from app.sms_sessions.model import SMSSession
+        session = db.query(SMSSession).filter_by(id=session_id).first()
+        _activate_subscription(db, farmer_id, plan, session=session)
         from app.sms_sessions.model import SMSSession
         from app.sms_sessions.service import SMSSessionService
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -102,7 +104,7 @@ def handle_mpesa_callback(checkout_request_id: str, result_code: int, result_des
             plan = data.get("plan", "Standard")
 
             if result_code == 0:
-                _activate_subscription(db, str(session.farmer_id), plan)
+                _activate_subscription(db, str(session.farmer_id), plan, session=session)
                 svc.complete_session(session)
                 AfricasTalkingClient().send_sms(
                     phone,
@@ -118,36 +120,45 @@ def handle_mpesa_callback(checkout_request_id: str, result_code: int, result_des
         db.close()
 
 
-def _activate_subscription(db, farmer_id: str, plan: str) -> None:
-    from app.subscriptions.model import Subscription
-    from app.subscriptions.repository import SubscriptionRepository
-    import uuid
+def _activate_subscription(db, farmer_id: str, plan: str, session=None) -> None:
+    from uuid import UUID
 
-    repo = SubscriptionRepository(db)
-    sub = repo.get_by_farmer_id(uuid.UUID(farmer_id))
+    from app.pricing.engine import normalize_plan_name
+    from app.pricing.service import QuoteService
+    from app.subscriptions.services.subscription_service import SubscriptionService
+    import json
+
     today = datetime.date.today()
+    quote_id = None
+    amount_kes = None
+    size_class = normalize_plan_name(plan)
+    rule_version = None
 
-    if plan == "Basic":
+    if session and session.session_data:
+        data = json.loads(session.session_data)
+        raw_quote_id = data.get("quote_id")
+        if raw_quote_id:
+            quote = QuoteService(db).get_by_id(UUID(raw_quote_id))
+            if quote:
+                quote_id = quote.id
+                amount_kes = quote.amount_kes
+                size_class = quote.size_class
+                rule_version = quote.rule_version
+                QuoteService(db).mark_paid(quote, commit=False)
+
+    if size_class == "Micro" or (amount_kes == 0):
         end_date = None
-    elif plan == "Standard":
-        end_date = today + datetime.timedelta(days=30)
-    else:  # Premium
+    else:
         end_date = today + datetime.timedelta(days=30)
 
-    if sub:
-        sub.is_active = True
-        sub.plan_name = plan
-        sub.start_date = today
-        sub.end_date = end_date
-        repo.update(sub)
-        db.commit()
-    else:
-        sub = Subscription(
-            farmer_id=uuid.UUID(farmer_id),
-            is_active=True,
-            plan_name=plan,
-            start_date=today,
-            end_date=end_date,
-        )
-        db.add(sub)
-        db.commit()
+    SubscriptionService(db).activate_subscription(
+        farmer_id=UUID(farmer_id),
+        plan_name=size_class,
+        start_date=today,
+        end_date=end_date,
+        size_class=size_class,
+        amount_kes=amount_kes if amount_kes is not None else (0 if size_class == "Micro" else None),
+        quote_id=quote_id,
+        rule_version=rule_version,
+        commit=True,
+    )

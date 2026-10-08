@@ -206,12 +206,31 @@ class SMSHandler:
 
     def _handle_subscription_confirmation(self, session, farmer, phone: str, confirmed: str) -> None:
         if confirmed == "No":
+            data = self.session_service.get_data(session)
+            quote_id = data.get("quote_id")
+            if quote_id:
+                from uuid import UUID
+                from app.pricing.model import QuoteStatus
+                from app.pricing.service import QuoteService
+                quote = QuoteService(self.db).get_by_id(UUID(quote_id))
+                if quote and quote.status != QuoteStatus.PAID:
+                    QuoteService(self.db).mark_cancelled(quote)
             self.session_service.complete_session(session)
             self.sms.send_sms(phone, "Subscription cancelled. Dial *384# to start again.")
             return
         data = self.session_service.get_data(session)
-        plan = data.get("plan", "Basic")
-        price = PLAN_PRICES.get(plan, 0)
+        if data.get("quote_id"):
+            price = int(data.get("amount_kes") or 0)
+            plan = data.get("size_class", "Micro")
+            if price > 0 and not data.get("has_size_input"):
+                self.sms.send_sms(
+                    phone,
+                    "Add your acres or livestock first (dial *384#, profile) so we can price your farm. Free Micro is available after you reply 1 once size is saved.",
+                )
+                return
+        else:
+            plan = data.get("plan", "Basic")
+            price = PLAN_PRICES.get(plan, 0)
         self.session_service.mark_processing(session)
         if price == 0:
             from app.tasks.mpesa_tasks import activate_free_subscription
