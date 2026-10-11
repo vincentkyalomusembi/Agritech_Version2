@@ -1,48 +1,55 @@
+
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.recommendations.context_service import RecommendationContextService
 from app.recommendations.ai_services.provider import get_ai_provider
+from app.recommendations.model import Recommendation, RecommendationType
+from app.recommendations.repository import RecommendationRepository
 
 
 class LivestockRecommendationService:
-    """
-    Handles livestock recommendations.
+    """Generate and save livestock recommendations."""
 
-    This service:
-    1. Builds the farmer context.
-    2. Sends the context to the selected AI provider.
-    3. Returns the AI recommendation.
-
-    Persistence and SMS delivery are handled later.
-    """
-
-    def __init__(
-        self,
-        db: Session,
-        provider: str = "gemini",
-    ):
+    def __init__(self, db: Session, provider: str = "gemini"):
         self.context_service = RecommendationContextService(db)
         self.ai_provider = get_ai_provider(provider)
+        self.repository = RecommendationRepository(db)
+        self.provider_name = provider
 
-    def recommend(
-        self,
-        farmer_id: UUID,
-    ) -> str:
-        """
-        Generate a livestock recommendation for a farmer.
-        """
+    def recommend(self, farmer_id: UUID) -> str:
+        # Build context using the farmer's real data.
+        context = self.context_service.build_context(farmer_id)
 
-        # Build the farmer's complete agricultural context.
-        context = self.context_service.build_context(
-            farmer_id
-        )
-
-        # Ask the AI provider for a specific livestock breed.
-        recommendation = self.ai_provider.generate_recommendation(
+        # Generate a specific livestock breed recommendation.
+        result = self.ai_provider.generate_recommendation(
             context=context,
             recommendation_type="livestock",
-        )
+        ).strip()
 
-        return recommendation.strip()
+        # Extract the title from the recommendation.
+        lines = result.splitlines()
+        title = "Livestock recommendation"
+
+        for i, line in enumerate(lines):
+            if line.strip().upper() == "RECOMMENDATION:":
+                if i + 1 < len(lines):
+                    title = lines[i + 1].strip()
+                break
+            elif line.strip().upper().startswith("RECOMMENDATION:"):
+                title = line.split(":", 1)[1].strip()
+                break
+
+        # Save the result before returning it.
+        saved = Recommendation(
+            farmer_id=farmer_id,
+            recommendation_type=RecommendationType.LIVESTOCK,
+            title=title[:200],
+            recommendation_text=result,
+            ai_provider=self.provider_name,
+            is_sent=False,
+        )
+        self.repository.create(saved)
+
+        return result

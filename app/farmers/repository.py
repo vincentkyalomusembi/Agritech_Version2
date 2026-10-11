@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+import app.models  # noqa: F401 - register all SQLAlchemy mappers
 from app.farmers.model import Farmer
 
 
