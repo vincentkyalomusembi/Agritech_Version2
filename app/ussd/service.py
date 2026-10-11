@@ -147,12 +147,8 @@ class USSDService:
             return menu.INVALID_OPTION
 
         service_key = menu.MENU_OPTIONS[service_choice]
-        from app.pricing.service import FarmerSizeService
-        if not FarmerSizeService(self.db).can_use_service(farmer.id, service_key):
-            return (
-                "END This service needs a paid size class. "
-                "Dial *384# and choose 8 to see your monthly price."
-            )
+        # MVP: subscription enforcement is temporarily disabled. Keep all
+        # farmer services available while subscription pricing is finalized.
         return self._launch_service(farmer, service_key, cb_id, text)
 
     # ── Service launcher ──────────────────────────────────────────────

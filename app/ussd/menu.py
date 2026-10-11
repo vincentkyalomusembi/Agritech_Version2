@@ -35,7 +35,6 @@ MAIN_MENU = (
     "5. Market Prices\n"
     "6. Request Expert\n"
     "7. My Profile\n"
-    "8. Subscribe\n"
     "0. Exit"
 )
 
@@ -62,7 +61,6 @@ MENU_OPTIONS = {
     "5": "market_prices",
     "6": "expert_request",
     "7": "profile_update",
-    "8": "subscription",
 }
 
 SERVICE_LABELS = {
