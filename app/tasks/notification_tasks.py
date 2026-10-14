@@ -4,8 +4,6 @@ Celery tasks for proactive notifications:
 - Weekly market price digest
 - Expert follow-up feedback (24h after expert request)
 """
-import datetime
-
 from app.core.celery_app import celery_app
 from app.core.africas_talking import AfricasTalkingClient
 from app.database.sessions import SessionLocal
@@ -61,34 +59,6 @@ def send_daily_weather_alerts():
         db.close()
 
 
-@celery_app.task
-def send_expert_followup():
-    """
-    24 hours after an expert request, ask the farmer if the expert contacted them.
-    """
-    db = SessionLocal()
-    try:
-        from app.expert_requests.model import ExpertRequest, RequestStatus
-
-        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
-        requests = db.query(ExpertRequest).filter(
-            ExpertRequest.status == RequestStatus.PENDING,
-            ExpertRequest.created_at <= cutoff,
-        ).all()
-
-        sms = AfricasTalkingClient()
-        for req in requests:
-            farmer = req.farmer
-            expert = req.expert
-            if farmer:
-                sms.send_sms(
-                    farmer.phone_number,
-                    f"Did {expert.full_name} contact you?\nReply 1. Yes  2. No\n(This helps us improve our service)",
-                )
-    finally:
-        db.close()
-
-
 # Register beat schedules for proactive notifications
 from app.core.celery_app import celery_app as _app
 
@@ -96,9 +66,5 @@ _app.conf.beat_schedule.update({
     "daily-weather-alerts": {
         "task": "app.tasks.notification_tasks.send_daily_weather_alerts",
         "schedule": 86400.0,  # daily
-    },
-    "expert-followup": {
-        "task": "app.tasks.notification_tasks.send_expert_followup",
-        "schedule": 3600.0,  # hourly check
     },
 })

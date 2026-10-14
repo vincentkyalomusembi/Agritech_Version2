@@ -45,6 +45,10 @@ class RegistrationService:
             phone_number=farmer_data.phone_number,
             pin_hash=hash_pin(farmer_data.pin),
             county_id=farmer_data.county_id,
+            latitude=farmer_data.latitude,
+            longitude=farmer_data.longitude,
+            sub_county=farmer_data.sub_county,
+            ward=farmer_data.ward,
         )
 
         # Save farmer.

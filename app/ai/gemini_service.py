@@ -1,7 +1,8 @@
 from google import genai
 
-from app.ai.prompts import SYSTEM_PROMPT
+from app.ai.prompts import LEGACY_SYSTEM_PROMPT, SYSTEM_PROMPT
 from app.core.config import settings
+import json
 
 
 class GeminiService:
@@ -33,7 +34,7 @@ class GeminiService:
         # so USSD/SMS follow-up messages remain concise and predictable.
         # ---- End Improvement ----
         prompt = f"""
-{SYSTEM_PROMPT}
+{LEGACY_SYSTEM_PROMPT}
 
 Farmer Data
 
@@ -50,3 +51,26 @@ categories not supported by the supplied data.
         )
 
         return (response.text or "").strip()[:1200]
+
+    def generate_structured_recommendation(self, context: dict) -> dict:
+        """Ask Gemini to select IDs from the supplied catalogue and return JSON."""
+        schema = {
+            "type": "OBJECT",
+            "properties": {
+                "primary_id": {"type": "STRING"},
+                "alternative_ids": {"type": "ARRAY", "items": {"type": "STRING"}},
+                "why_fit": {"type": "STRING"},
+                "planting_window": {"type": "STRING", "nullable": True},
+                "spacing": {"type": "STRING", "nullable": True},
+                "actions": {"type": "ARRAY", "items": {"type": "STRING"}},
+            },
+            "required": ["primary_id", "alternative_ids", "why_fit", "planting_window", "spacing", "actions"],
+        }
+        response = self.client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{SYSTEM_PROMPT}\n\nDATA:\n{json.dumps(context, ensure_ascii=False, default=str)}",
+            config={"response_mime_type": "application/json", "response_schema": schema},
+        )
+        if not response.text:
+            raise RuntimeError("Gemini returned an empty structured response.")
+        return json.loads(response.text)

@@ -163,3 +163,20 @@ class RecommendationContextService:
             "environment": environment,
             "market_prices": markets,
         }
+
+    def environmental_context(self, farmer) -> dict:
+        """Collect best available farm-point weather, rainfall and vegetation data."""
+        county = farmer.county
+        latitude = farmer.latitude if farmer.latitude is not None else getattr(county, "latitude", None)
+        longitude = farmer.longitude if farmer.longitude is not None else getattr(county, "longitude", None)
+        if latitude is None or longitude is None:
+            return {"latitude": latitude, "longitude": longitude, "weather_forecast": None, "observations": None}
+        try:
+            weather = self.weather.get_weather_summary(latitude, longitude)
+        except Exception:
+            weather = None
+        try:
+            observations = self.environment.get_environment(latitude, longitude)
+        except Exception:
+            observations = None
+        return {"latitude": latitude, "longitude": longitude, "weather_forecast": weather, "observations": observations}

@@ -12,6 +12,7 @@ celery_app = Celery(
         "app.tasks.notification_tasks",
         "app.tasks.mpesa_tasks",
         "app.tasks.subscription_tasks",
+        "app.tasks.expert_tasks",
     ],
 )
 
@@ -32,6 +33,10 @@ celery_app.conf.update(
         "scrape-market-prices": {
             "task": "app.tasks.recommendation_tasks.scrape_market_prices",
             "schedule": 86400.0,  # daily
+        },
+        "expire-expert-offers": {
+            "task": "app.tasks.expert_tasks.expire_expert_offers",
+            "schedule": 300.0,
         },
     },
 )

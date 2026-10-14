@@ -5,6 +5,7 @@ from app.database.seeders.counties import seed_counties
 from app.database.seeders.crops import seed_crops
 from app.database.seeders.livestock import seed_livestock
 from app.database.seeders.experts import seed_experts
+from app.database.seeders.catalogue import seed_catalogue
 
 
 def seed_database():
@@ -26,6 +27,9 @@ def seed_database():
 
         print("\n4. Seeding Experts...")
         seed_experts(db)
+
+        print("\n5. Seeding sourced varieties, breeds, vendors, and markets...")
+        seed_catalogue(db)
 
         print("\n" + "=" * 60)
         print(" Database seeding completed successfully!")

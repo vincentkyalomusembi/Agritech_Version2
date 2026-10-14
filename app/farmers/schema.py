@@ -35,6 +35,10 @@ class FarmerCreate(BaseModel):
     )
 
     county_id: UUID
+    latitude: float | None = Field(default=None, ge=-4.7, le=5.1)
+    longitude: float | None = Field(default=None, ge=33.9, le=41.9)
+    sub_county: str | None = Field(default=None, max_length=100)
+    ward: str | None = Field(default=None, max_length=100)
 
     # ---- Copilot Improvement ----
     # Canonicalize phone numbers and restrict PINs to numeric values before
@@ -93,6 +97,10 @@ class FarmerUpdate(BaseModel):
     )
 
     county_id: UUID | None = None
+    latitude: float | None = Field(default=None, ge=-4.7, le=5.1)
+    longitude: float | None = Field(default=None, ge=33.9, le=41.9)
+    sub_county: str | None = Field(default=None, max_length=100)
+    ward: str | None = Field(default=None, max_length=100)
 
 
 class ChangePinRequest(BaseModel):
@@ -132,6 +140,10 @@ class FarmerResponse(BaseModel):
     national_id: str
     phone_number: str
     county_id: UUID
+    latitude: float | None = None
+    longitude: float | None = None
+    sub_county: str | None = None
+    ward: str | None = None
     is_active: bool
 
     model_config = {

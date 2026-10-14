@@ -28,6 +28,7 @@ from app.products.routes import router as products_router
 from app.staff.routes import router as staff_router
 from app.admin.routes import router as admin_router
 from app.pricing.routes import router as pricing_router
+from app.recommendations.routes import router as recommendations_router
 from app.core.config import settings
 
 # Exception Handlers
@@ -55,6 +56,7 @@ app.include_router(products_router)
 app.include_router(staff_router)
 app.include_router(admin_router)
 app.include_router(pricing_router)
+app.include_router(recommendations_router)
 
 _origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
 if _origins:

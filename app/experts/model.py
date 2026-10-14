@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     func,
+    Float,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -60,6 +61,8 @@ class Expert(Base):
         nullable=False,
     )
 
+    contact_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -85,3 +88,6 @@ class Expert(Base):
         String(150),
         nullable=False,
     )
+
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)

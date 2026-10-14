@@ -9,8 +9,8 @@ from app.expert_requests.model import RequestStatus
 class ExpertRequestCreate(BaseModel):
     """Data required to submit an expert request."""
 
-    farmer_id: UUID
-    expert_id: UUID
+    farmer_id: UUID | None = None
+    expert_id: UUID | None = None
     issue_type: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
     preferred_visit_date: datetime | None = None
@@ -28,13 +28,15 @@ class ExpertRequestResponse(BaseModel):
 
     id: UUID
     farmer_id: UUID
-    expert_id: UUID
+    expert_id: UUID | None
     issue_type: str
     description: str
     status: RequestStatus
     preferred_visit_date: datetime | None
     created_at: datetime
     updated_at: datetime
+    request_code: str
+    farmer_resolution: str | None = None
 
     model_config = {
         "from_attributes": True,

@@ -16,6 +16,7 @@ class ExpertResponse(BaseModel):
     county_id: UUID
     organization: str
     is_available: bool
+    contact_verified: bool
     created_at: datetime
     updated_at: datetime
 
@@ -31,3 +32,7 @@ class ExpertListResponse(BaseModel):
     total: int
     limit: int | None = None
     offset: int = 0
+
+
+class ExpertContactVerificationUpdate(BaseModel):
+    contact_verified: bool

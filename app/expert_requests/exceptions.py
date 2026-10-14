@@ -40,9 +40,19 @@ class InvalidStatusTransitionError(ExpertRequestError):
 
 ALLOWED_STATUS_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
     RequestStatus.PENDING: {
-        RequestStatus.ACCEPTED,
+        RequestStatus.OFFERED,
+        RequestStatus.UNASSIGNED,
+        RequestStatus.ESCALATED,
         RequestStatus.CANCELLED,
     },
+    RequestStatus.OFFERED: {
+        RequestStatus.ACCEPTED,
+        RequestStatus.UNASSIGNED,
+        RequestStatus.ESCALATED,
+        RequestStatus.CANCELLED,
+    },
+    RequestStatus.UNASSIGNED: {RequestStatus.OFFERED, RequestStatus.ESCALATED, RequestStatus.CANCELLED},
+    RequestStatus.ESCALATED: {RequestStatus.UNASSIGNED, RequestStatus.CANCELLED},
     RequestStatus.ACCEPTED: {
         RequestStatus.COMPLETED,
         RequestStatus.CANCELLED,
