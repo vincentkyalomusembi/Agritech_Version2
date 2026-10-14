@@ -73,6 +73,10 @@ class ProfileService:
         if update_data.county_id is not None:
             farmer.county_id = update_data.county_id
 
+        for field in ("latitude", "longitude", "sub_county", "ward"):
+            if field in update_data.model_fields_set:
+                setattr(farmer, field, getattr(update_data, field))
+
         return self.repository.update(farmer)
 
     def delete_profile(

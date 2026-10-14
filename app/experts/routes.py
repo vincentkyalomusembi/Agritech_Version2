@@ -8,8 +8,10 @@ from app.auth.dependencies import get_current_farmer
 from app.farmers.model import Farmer
 from app.experts.exceptions import ExpertError, ExpertNotFoundError
 from app.experts.model import ExpertType
-from app.experts.schema import ExpertListResponse
+from app.experts.schema import ExpertContactVerificationUpdate, ExpertListResponse, ExpertResponse
 from app.experts.services.expert_service import ExpertService
+from app.staff.dependencies import require_admin_or_staff
+from app.experts.model import Expert
 
 router = APIRouter(
     prefix="/experts",
@@ -64,3 +66,17 @@ def list_experts(
 
     except ExpertError as exc:
         raise _handle_expert_error(exc)
+
+
+@router.patch("/{expert_id}/contact-verification")
+def set_expert_contact_verification(
+    expert_id: UUID,
+    payload: ExpertContactVerificationUpdate,
+    _: Farmer | object = Depends(require_admin_or_staff),
+    db: Session = Depends(get_db),
+):
+    expert = ExpertService(db).get_expert(expert_id)
+    expert.contact_verified = payload.contact_verified
+    db.commit()
+    db.refresh(expert)
+    return ExpertResponse.model_validate(expert)

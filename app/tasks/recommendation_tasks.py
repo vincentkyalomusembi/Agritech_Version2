@@ -3,6 +3,7 @@ Celery tasks for async AI recommendation generation.
 Fan-out: fetch all data in parallel, then call AI, then send SMS.
 """
 import json
+from uuid import UUID
 
 from celery import shared_task
 
@@ -25,12 +26,7 @@ def _get_db_and_session(session_id: str):
 def run_crop_recommendation(self, session_id: str, farmer_id: str, phone: str):
     db = SessionLocal()
     try:
-        from app.farmers.repository import FarmerRepository
-        from app.farmer_crops.repository import FarmerCropRepository
-        from app.integrations.openweather.client import OpenWeatherClient
-        from app.integrations.google_earth_engine.service import EarthEngineService
-        from app.market_prices.repository import MarketPriceRepository
-        from app.ai.gemini_service import GeminiService
+        from app.recommendations.structured_service import StructuredRecommendationService, format_recommendation_sms
         from app.sms_sessions.model import SMSSession
 
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -38,40 +34,12 @@ def run_crop_recommendation(self, session_id: str, farmer_id: str, phone: str):
             return
 
         svc = SMSSessionService(db)
-        farmer = FarmerRepository(db).get_by_id(farmer_id)
         data = svc.get_data(session)
-
-        weather = _safe_fetch(lambda: OpenWeatherClient().get_weather_summary(
-            farmer.county.latitude, farmer.county.longitude
-        ))
-        earth = _safe_fetch(lambda: EarthEngineService().get_environment(
-            farmer.county.latitude, farmer.county.longitude
-        ))
-        crops = FarmerCropRepository(db).get_farmer_crops(farmer_id)
-        market_repo = MarketPriceRepository(db)
-        market_data = []
-        for fc in crops:
-            price = market_repo.get_latest_by_crop(fc.crop_id)
-            if price:
-                market_data.append({"crop": fc.crop.name, "price_kes": price.average_price, "unit": price.unit, "date": str(price.price_date)})
-
-        context = {
-            "farmer": {"name": farmer.full_name, "county": farmer.county.name},
-            "session_inputs": data,
-            "weather": weather,
-            "earth_engine": earth,
-            "market_prices": market_data,
-        }
-
-        recommendation = _safe_fetch(lambda: GeminiService().generate_recommendation(context))
-        if not recommendation:
-            recommendation = _rule_based_crop_fallback(data, weather, market_data)
+        card = StructuredRecommendationService(db).recommend(UUID(farmer_id), "crop", data)
 
         svc.complete_session(session)
-        AfricasTalkingClient().send_sms(
-            phone,
-            f"Crop Recommendation for {farmer.full_name}:\n{recommendation}\nReply MENU to return.",
-        )
+        for segment in format_recommendation_sms(card):
+            AfricasTalkingClient().send_sms(phone, segment)
     except Exception as exc:
         db.rollback()
         try:
@@ -86,11 +54,7 @@ def run_crop_recommendation(self, session_id: str, farmer_id: str, phone: str):
 def run_livestock_recommendation(self, session_id: str, farmer_id: str, phone: str):
     db = SessionLocal()
     try:
-        from app.farmers.repository import FarmerRepository
-        from app.farmer_livestocks.repository import FarmerLivestockRepository
-        from app.integrations.openweather.client import OpenWeatherClient
-        from app.integrations.google_earth_engine.service import EarthEngineService
-        from app.ai.gemini_service import GeminiService
+        from app.recommendations.structured_service import StructuredRecommendationService, format_recommendation_sms
         from app.sms_sessions.model import SMSSession
 
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -98,34 +62,12 @@ def run_livestock_recommendation(self, session_id: str, farmer_id: str, phone: s
             return
 
         svc = SMSSessionService(db)
-        farmer = FarmerRepository(db).get_by_id(farmer_id)
         data = svc.get_data(session)
-
-        weather = _safe_fetch(lambda: OpenWeatherClient().get_weather_summary(
-            farmer.county.latitude, farmer.county.longitude
-        ))
-        earth = _safe_fetch(lambda: EarthEngineService().get_environment(
-            farmer.county.latitude, farmer.county.longitude
-        ))
-        livestock = FarmerLivestockRepository(db).get_farmer_livestock(farmer_id)
-
-        context = {
-            "farmer": {"name": farmer.full_name, "county": farmer.county.name},
-            "session_inputs": data,
-            "registered_livestock": [{"type": fl.livestock.name, "herd_size": fl.herd_size} for fl in livestock],
-            "weather": weather,
-            "earth_engine": earth,
-        }
-
-        recommendation = _safe_fetch(lambda: GeminiService().generate_recommendation(context))
-        if not recommendation:
-            recommendation = "Ensure adequate water and feed. Monitor for disease signs. Consult a vet if needed."
+        card = StructuredRecommendationService(db).recommend(UUID(farmer_id), "livestock", data)
 
         svc.complete_session(session)
-        AfricasTalkingClient().send_sms(
-            phone,
-            f"Livestock Recommendation for {farmer.full_name}:\n{recommendation}\nReply MENU to return.",
-        )
+        for segment in format_recommendation_sms(card):
+            AfricasTalkingClient().send_sms(phone, segment)
     except Exception as exc:
         db.rollback()
         try:
@@ -279,10 +221,8 @@ def run_disease_alert(self, session_id: str, farmer_id: str, phone: str):
 def run_expert_request(self, session_id: str, farmer_id: str, phone: str):
     db = SessionLocal()
     try:
-        from app.farmers.repository import FarmerRepository
-        from app.experts.repository import ExpertRepository
-        from app.experts.model import ExpertType
-        from app.expert_requests.model import ExpertRequest
+        from app.expert_requests.schema import ExpertRequestCreate
+        from app.expert_requests.services.expert_request_service import ExpertRequestService
         from app.sms_sessions.model import SMSSession
 
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -290,44 +230,12 @@ def run_expert_request(self, session_id: str, farmer_id: str, phone: str):
             return
 
         svc = SMSSessionService(db)
-        farmer = FarmerRepository(db).get_by_id(farmer_id)
         data = svc.get_data(session)
-
         issue_type = data.get("issue_type", "Crop")
-        expert_type = ExpertType.VETERINARY if issue_type == "Livestock" else ExpertType.AGRICULTURE
-
-        expert = ExpertRepository(db).list_filtered(
-            county_id=farmer.county_id,
-            expert_type=expert_type,
-            is_available=True,
-            limit=1,
-        )
-        expert = expert[0] if expert else None
-
-        if expert:
-            request = ExpertRequest(
-                farmer_id=farmer.id,
-                expert_id=expert.id,
-                issue_type=issue_type,
-                description=data.get("description", ""),
-            )
-            db.add(request)
-            db.commit()
-
-            AfricasTalkingClient().send_sms(
-                phone,
-                f"Expert request received.\n{expert.full_name} will contact you ({data.get('availability','')}).\nContact: {expert.phone_number}\nReply MENU to return.",
-            )
-            AfricasTalkingClient().send_sms(
-                expert.phone_number,
-                f"New request from {farmer.full_name}, {farmer.county.name}.\nIssue: {data.get('description','')}\nContact: {phone}\nTime: {data.get('availability','')}",
-            )
-        else:
-            AfricasTalkingClient().send_sms(
-                phone,
-                f"No available expert in {farmer.county.name} right now. We will notify you when one is available.\nReply MENU to return.",
-            )
-
+        ExpertRequestService(db).create_request(ExpertRequestCreate(
+            farmer_id=UUID(farmer_id), issue_type=issue_type,
+            description=data.get("description", ""),
+        ), source_session_id=UUID(session_id))
         svc.complete_session(session)
     except Exception as exc:
         db.rollback()
@@ -374,6 +282,14 @@ def run_profile_update(self, session_id: str, farmer_id: str, phone: str):
                 msg = f"County updated to {county.name}."
             else:
                 msg = f"County '{new_value}' not found. No changes made."
+        elif action == "sub_county_ward":
+            parts = [part.strip() for part in new_value.split(",", 1)]
+            if len(parts) != 2 or not all(parts):
+                msg = "Please provide both sub-county and ward separated by a comma. No changes made."
+            else:
+                farmer.sub_county, farmer.ward = parts
+                farmer_repo.update(farmer)
+                msg = f"Sub-county set to {parts[0]} and ward set to {parts[1]}."
         elif action == "add_crop":
             crop = db.query(Crop).filter(Crop.name.ilike(new_value)).first()
             if crop:

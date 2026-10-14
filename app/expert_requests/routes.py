@@ -19,11 +19,24 @@ from app.expert_requests.schema import (
 from app.expert_requests.services.expert_request_service import (
     ExpertRequestService,
 )
+from app.expert_requests.model import ExpertRequest, RequestStatus
 from app.experts.exceptions import ExpertNotFoundError, ExpertUnavailableError
 
 router = APIRouter(
     tags=["Expert Requests"],
 )
+
+
+@router.get("/expert-requests", response_model=list[ExpertRequestResponse])
+def list_managed_expert_requests(
+    status_filter: RequestStatus | None = None,
+    _: Farmer | object = Depends(require_admin_or_staff),
+    db: Session = Depends(get_db),
+):
+    query = db.query(ExpertRequest)
+    if status_filter is not None:
+        query = query.filter(ExpertRequest.status == status_filter)
+    return [ExpertRequestResponse.model_validate(item) for item in query.order_by(ExpertRequest.created_at.desc()).limit(200).all()]
 
 
 def _handle_expert_request_error(exc: ExpertRequestError) -> HTTPException:
@@ -68,11 +81,7 @@ def create_expert_request(
 ):
     """Submit a new expert assistance request."""
 
-    if payload.farmer_id != current_farmer.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only create requests for yourself.",
-        )
+    payload.farmer_id = current_farmer.id
 
     service = ExpertRequestService(db)
 

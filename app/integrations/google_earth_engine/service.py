@@ -30,7 +30,10 @@ class EarthEngineService:
             longitude=longitude,
         )
 
+        ndvi_trend = self.ndvi_service.get_ndvi_trend(latitude, longitude)
+
         return {
             "ndvi": ndvi,
             "rainfall": rainfall,
+            "ndvi_trend": ndvi_trend,
         }

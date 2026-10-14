@@ -53,6 +53,11 @@ class Farmer(Base):
         index=True,
     )
 
+    latitude: Mapped[float | None] = mapped_column(nullable=True)
+    longitude: Mapped[float | None] = mapped_column(nullable=True)
+    sub_county: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ward: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

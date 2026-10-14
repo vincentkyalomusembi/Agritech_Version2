@@ -35,9 +35,17 @@ class SMSHandler:
         if message_id and self.session_repo.message_already_processed(message_id):
             return
 
+        from app.expert_requests.services.expert_request_service import ExpertRequestService
+        expert_service = ExpertRequestService(self.db, sms=self.sms)
+        if expert_service.handle_expert_reply(phone, text):
+            return
+
         farmer = self.farmer_repo.get_by_phone(phone)
         if farmer is None:
             self.sms.send_sms(phone, "Phone not registered. Dial *384# to register.")
+            return
+
+        if expert_service.handle_farmer_resolution(farmer, text):
             return
 
         # ── Profile completion (new farmers only) ────────────────────
@@ -247,9 +255,10 @@ class SMSHandler:
         self.session_service.complete_session(session)
         crops = ", ".join(fc.crop.name for fc in farmer.crops) if farmer.crops else "None"
         livestock = ", ".join(fl.livestock.name for fl in farmer.livestock) if farmer.livestock else "None"
+        local_area = ", ".join(value for value in (farmer.sub_county, farmer.ward) if value) or "Not set"
         self.sms.send_sms(
             phone,
-            f"Your Profile:\nName: {farmer.full_name}\nCounty: {farmer.county.name}\nCrops: {crops}\nLivestock: {livestock}\nDial *384# for more options.",
+            f"Your Profile:\nName: {farmer.full_name}\nCounty: {farmer.county.name}\nSub-county/Ward: {local_area}\nCrops: {crops}\nLivestock: {livestock}\nDial *384# for more options.",
         )
 
     def _cancel_active_session(self, phone: str, farmer) -> None:
@@ -278,6 +287,7 @@ class SMSHandler:
             "county": "Enter your new county name:",
             "add_crop": "Enter the crop name to add:",
             "add_livestock": "Enter the livestock type to add:",
+            "sub_county_ward": "Enter your sub-county and ward separated by a comma (for example: Kikuyu, Muguga):",
         }
         return questions.get(action, "")
 

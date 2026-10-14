@@ -24,3 +24,5 @@ from app.advisory.model import Advisory
 from app.pricing.model import PricingRule, SubscriptionQuote
 from app.staff.model import StaffUser
 from app.audit.model import AuditLog
+from app.catalogue.model import CropVariety, LivestockBreed, Vendor, VendorProduct, Market
+from app.expert_requests.model import ExpertOffer

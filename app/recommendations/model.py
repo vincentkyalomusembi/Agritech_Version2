@@ -11,6 +11,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -37,6 +38,16 @@ class Recommendation(Base):
         index=True,
     )
 
+    crop_variety_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("crop_varieties.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    livestock_breed_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("livestock_breeds.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    vendor_product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("vendor_products.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     recommendation_type: Mapped[RecommendationType] = mapped_column(
         Enum(RecommendationType),
         nullable=False,
@@ -52,6 +63,8 @@ class Recommendation(Base):
         Text,
         nullable=False,
     )
+
+    recommendation_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     ai_provider: Mapped[str] = mapped_column(
         String(50),

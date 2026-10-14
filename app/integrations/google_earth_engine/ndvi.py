@@ -95,3 +95,23 @@ class NDVIService:
                 "longitude": longitude,
             },
         }
+
+    def get_ndvi_trend(self, latitude: float, longitude: float, period_days: int = 30, buffer_meters: int = 500) -> dict:
+        """Compare the last two equal-length MODIS NDVI periods."""
+        area = self.ee.Geometry.Point([longitude, latitude]).buffer(buffer_meters)
+        end_date = datetime.utcnow()
+        periods = []
+        for offset in (0, period_days):
+            end = end_date - timedelta(days=offset)
+            start = end - timedelta(days=period_days)
+            image = (self.ee.ImageCollection("MODIS/061/MOD13Q1")
+                     .filterDate(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+                     .select("NDVI").mean())
+            raw = image.reduceRegion(reducer=self.ee.Reducer.mean(), geometry=area, scale=250, maxPixels=1e9).get("NDVI").getInfo()
+            periods.append(raw / 10000 if raw is not None else None)
+        previous, recent = periods[1], periods[0]
+        if previous is None or recent is None:
+            return {"direction": "unavailable", "previous_ndvi": previous, "recent_ndvi": recent}
+        delta = recent - previous
+        direction = "improving" if delta > 0.03 else "declining" if delta < -0.03 else "stable"
+        return {"direction": direction, "previous_ndvi": round(previous, 3), "recent_ndvi": round(recent, 3), "change": round(delta, 3), "period_days": period_days}
