@@ -1,11 +1,26 @@
 from celery import Celery
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.core.config import settings
 
+
+def _celery_redis_url(redis_url: str) -> str:
+    """Require TLS certificate verification for secure Redis URLs."""
+    if not redis_url.startswith("rediss://"):
+        return redis_url
+    parsed = urlsplit(redis_url)
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+             if key.lower() != "ssl_cert_reqs"]
+    query.append(("ssl_cert_reqs", "required"))
+    return urlunsplit(parsed._replace(query=urlencode(query)))
+
+
+celery_redis_url = _celery_redis_url(settings.REDIS_URL)
+
 celery_app = Celery(
     "agritech",
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL,
+    broker=celery_redis_url,
+    backend=celery_redis_url,
     include=[
         "app.tasks.recommendation_tasks",
         "app.tasks.session_tasks",
