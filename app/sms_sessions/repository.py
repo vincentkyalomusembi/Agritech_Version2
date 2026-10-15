@@ -45,6 +45,32 @@ class SMSSessionRepository:
             .first()
         )
 
+    def get_active_by_farmer(self, farmer_id: uuid.UUID) -> SMSSession | None:
+        """Return any active conversation for a farmer, regardless of type."""
+        return (
+            self.db.query(SMSSession)
+            .filter(
+                SMSSession.farmer_id == farmer_id,
+                SMSSession.session_status == SessionStatus.ACTIVE,
+                SMSSession.is_active.is_(True),
+            )
+            .order_by(SMSSession.created_at.asc())
+            .first()
+        )
+
+    def get_all_active_by_farmer(self, farmer_id: uuid.UUID) -> list[SMSSession]:
+        """Return every active conversation, including legacy duplicates."""
+        return (
+            self.db.query(SMSSession)
+            .filter(
+                SMSSession.farmer_id == farmer_id,
+                SMSSession.session_status == SessionStatus.ACTIVE,
+                SMSSession.is_active.is_(True),
+            )
+            .order_by(SMSSession.created_at.asc())
+            .all()
+        )
+
     def get_by_callback_session_id(self, callback_session_id: str) -> SMSSession | None:
         return (
             self.db.query(SMSSession)

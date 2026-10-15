@@ -134,6 +134,12 @@ class USSDService:
         if not verify_pin(pin, farmer.pin_hash):
             return menu.LOGIN_FAILED
 
+        if not getattr(farmer, "profile_complete", True):
+            return (
+                "END Please finish profile setup by SMS first. Reply to the latest AgriTech "
+                "message with your full name, then your county. Dial again after confirmation."
+            )
+
         # Authenticated — show main menu or handle service selection
         if depth == 2:
             return menu.MAIN_MENU
@@ -156,15 +162,18 @@ class USSDService:
     def _launch_service(self, farmer, service_key: str, cb_id: str | None, text: str) -> str:
         session_type = SessionType(service_key)
 
-        # Rate limiting
+        if not getattr(farmer, "profile_complete", True):
+            return "END Please finish profile setup by SMS before choosing a service."
+
+        # Only one SMS conversation can own incoming replies at a time.
+        existing = self.session_repo.get_active_by_farmer(farmer.id)
+        if existing:
+            label = menu.SERVICE_LABELS.get(existing.session_type.value, existing.session_type.value)
+            return menu.SESSION_ACTIVE.format(service=label)
+
+        # Charge the limit only when a new request will actually start.
         if not check_rate_limit(self.redis, str(farmer.phone_number)):
             return "END You have reached your request limit. Please try again later."
-
-        # Check for existing active session
-        existing = self.session_repo.get_active_by_farmer_and_type(farmer.id, session_type)
-        if existing:
-            label = menu.SERVICE_LABELS.get(service_key, service_key)
-            return menu.SESSION_ACTIVE.format(service=label)
 
         confirmation = menu.SERVICE_CONFIRMATIONS[service_key]
 
