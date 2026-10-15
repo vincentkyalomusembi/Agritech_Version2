@@ -1,9 +1,12 @@
-from fastapi import APIRouter, BackgroundTasks, Form, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header
 from fastapi.responses import JSONResponse
 
 from app.database.sessions import SessionLocal
 from app.core.webhooks import verify_webhook_secret
 from app.sms.handler import SMSHandler
+from app.database.sessions import get_db
+from app.recommendations.sms_service import RecommendationSMSService
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["SMS"])
 
@@ -42,8 +45,11 @@ def sms_delivery_report(
     networkCode: str | None = Form(default=None),
     failureReason: str | None = Form(default=None),
     webhook_secret: str | None = Header(default=None, alias="X-Webhook-Secret"),
+    db: Session = Depends(get_db),
 ):
     """Africa's Talking SMS delivery report webhook."""
     verify_webhook_secret(webhook_secret)
-    # Logged for monitoring — admin dashboard will consume this later
-    return JSONResponse({"status": "ok"})
+    updated = False
+    if id:
+        updated = RecommendationSMSService(db).update_delivery(id, status or "", failureReason)
+    return JSONResponse({"status": "ok", "updated": updated})

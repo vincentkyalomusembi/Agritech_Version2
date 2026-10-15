@@ -65,6 +65,9 @@ class SMSHandler:
         if text.upper().startswith("COUNTY:"):
             self._handle_county_update(phone, farmer, text[7:].strip())
             return
+        if text.upper().startswith("LOCATION:"):
+            self._handle_location_update(phone, farmer, text[9:].strip())
+            return
 
         command = text.upper()
 
@@ -288,6 +291,7 @@ class SMSHandler:
             "add_crop": "Enter the crop name to add:",
             "add_livestock": "Enter the livestock type to add:",
             "sub_county_ward": "Enter your sub-county and ward separated by a comma (for example: Kikuyu, Muguga):",
+            "coordinates": "Send latitude and longitude separated by a comma (for example: -0.3031, 36.0800):",
         }
         return questions.get(action, "")
 
@@ -316,3 +320,19 @@ class SMSHandler:
             f"Profile complete! Welcome {farmer.full_name}, {county.name}.\n"
             "Dial *384# to access all services.",
         )
+
+    def _handle_location_update(self, phone: str, farmer, value: str) -> None:
+        try:
+            latitude_text, longitude_text = value.split(",", 1)
+            latitude = float(latitude_text.strip())
+            longitude = float(longitude_text.strip())
+        except (ValueError, TypeError):
+            self.sms.send_sms(phone, "Invalid location. Reply LOCATION: latitude,longitude.")
+            return
+        if not -4.7 <= latitude <= 5.1 or not 33.9 <= longitude <= 41.9:
+            self.sms.send_sms(phone, "Location must be within Kenya. Reply LOCATION: latitude,longitude.")
+            return
+        farmer.latitude = latitude
+        farmer.longitude = longitude
+        self.farmer_repo.update(farmer)
+        self.sms.send_sms(phone, "Exact farm location saved. Future weather and satellite results will use it.")

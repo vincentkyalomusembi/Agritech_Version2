@@ -3,6 +3,7 @@ Celery tasks for async AI recommendation generation.
 Fan-out: fetch all data in parallel, then call AI, then send SMS.
 """
 import json
+import logging
 from uuid import UUID
 
 from celery import shared_task
@@ -12,6 +13,8 @@ from app.core.africas_talking import AfricasTalkingClient
 from app.database.sessions import SessionLocal
 from app.sms_sessions.repository import SMSSessionRepository
 from app.sms_sessions.service import SMSSessionService
+
+logger = logging.getLogger(__name__)
 
 
 def _get_db_and_session(session_id: str):
@@ -27,6 +30,8 @@ def run_crop_recommendation(self, session_id: str, farmer_id: str, phone: str):
     db = SessionLocal()
     try:
         from app.recommendations.structured_service import StructuredRecommendationService, format_recommendation_sms
+        from app.recommendations.repository import RecommendationRepository
+        from app.recommendations.sms_service import RecommendationSMSService
         from app.sms_sessions.model import SMSSession
 
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -36,10 +41,14 @@ def run_crop_recommendation(self, session_id: str, farmer_id: str, phone: str):
         svc = SMSSessionService(db)
         data = svc.get_data(session)
         card = StructuredRecommendationService(db).recommend(UUID(farmer_id), "crop", data)
+        recommendation = RecommendationRepository(db).get_by_id(UUID(card["id"]))
 
         svc.complete_session(session)
+        sms_service = RecommendationSMSService(db)
         for segment in format_recommendation_sms(card):
-            AfricasTalkingClient().send_sms(phone, segment)
+            outcome = sms_service.send_message(recommendation, phone, segment)
+            if outcome.get("status") == "error":
+                logger.error("Crop recommendation SMS submission failed: %s", outcome.get("reason"))
     except Exception as exc:
         db.rollback()
         try:
@@ -55,6 +64,8 @@ def run_livestock_recommendation(self, session_id: str, farmer_id: str, phone: s
     db = SessionLocal()
     try:
         from app.recommendations.structured_service import StructuredRecommendationService, format_recommendation_sms
+        from app.recommendations.repository import RecommendationRepository
+        from app.recommendations.sms_service import RecommendationSMSService
         from app.sms_sessions.model import SMSSession
 
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -64,10 +75,14 @@ def run_livestock_recommendation(self, session_id: str, farmer_id: str, phone: s
         svc = SMSSessionService(db)
         data = svc.get_data(session)
         card = StructuredRecommendationService(db).recommend(UUID(farmer_id), "livestock", data)
+        recommendation = RecommendationRepository(db).get_by_id(UUID(card["id"]))
 
         svc.complete_session(session)
+        sms_service = RecommendationSMSService(db)
         for segment in format_recommendation_sms(card):
-            AfricasTalkingClient().send_sms(phone, segment)
+            outcome = sms_service.send_message(recommendation, phone, segment)
+            if outcome.get("status") == "error":
+                logger.error("Livestock recommendation SMS submission failed: %s", outcome.get("reason"))
     except Exception as exc:
         db.rollback()
         try:
@@ -172,6 +187,7 @@ def run_disease_alert(self, session_id: str, farmer_id: str, phone: str):
         from app.farmers.repository import FarmerRepository
         from app.integrations.openweather.client import OpenWeatherClient
         from app.integrations.google_earth_engine.service import EarthEngineService
+        from app.integrations.google_earth_engine.cache_service import EnvironmentalCacheService
         from app.ai.gemini_service import GeminiService
         from app.sms_sessions.model import SMSSession
 
@@ -183,11 +199,14 @@ def run_disease_alert(self, session_id: str, farmer_id: str, phone: str):
         farmer = FarmerRepository(db).get_by_id(farmer_id)
         data = svc.get_data(session)
 
+        latitude = farmer.latitude if farmer.latitude is not None else farmer.county.latitude
+        longitude = farmer.longitude if farmer.longitude is not None else farmer.county.longitude
         weather = _safe_fetch(lambda: OpenWeatherClient().get_weather_summary(
-            farmer.county.latitude, farmer.county.longitude
+            latitude, longitude
         ))
-        earth = _safe_fetch(lambda: EarthEngineService().get_environment(
-            farmer.county.latitude, farmer.county.longitude
+        cached_earth = EnvironmentalCacheService(db).get_for_farmer(farmer)
+        earth = cached_earth or _safe_fetch(lambda: EarthEngineService().get_environment(
+            latitude, longitude
         ))
 
         context = {
@@ -290,6 +309,18 @@ def run_profile_update(self, session_id: str, farmer_id: str, phone: str):
                 farmer.sub_county, farmer.ward = parts
                 farmer_repo.update(farmer)
                 msg = f"Sub-county set to {parts[0]} and ward set to {parts[1]}."
+        elif action == "coordinates":
+            try:
+                latitude_text, longitude_text = new_value.split(",", 1)
+                latitude = float(latitude_text.strip())
+                longitude = float(longitude_text.strip())
+                if not -4.7 <= latitude <= 5.1 or not 33.9 <= longitude <= 41.9:
+                    raise ValueError
+                farmer.latitude, farmer.longitude = latitude, longitude
+                farmer_repo.update(farmer)
+                msg = "Exact farm location saved."
+            except (ValueError, TypeError):
+                msg = "Invalid location. Use latitude,longitude within Kenya."
         elif action == "add_crop":
             crop = db.query(Crop).filter(Crop.name.ilike(new_value)).first()
             if crop:

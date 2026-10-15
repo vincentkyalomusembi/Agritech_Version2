@@ -19,7 +19,7 @@ class EarthEngineClient:
     """
 
     def __init__(self):
-        credentials_json = os.getenv("GEE_CREDENTIALS_JSON")
+        credentials_json = settings.GEE_CREDENTIALS_JSON or os.getenv("GEE_CREDENTIALS_JSON")
 
         if credentials_json:
             # Production: credentials are stored as a Heroku Config Var

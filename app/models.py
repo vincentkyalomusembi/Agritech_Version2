@@ -17,7 +17,8 @@ from app.experts.model import Expert
 from app.expert_requests.model import ExpertRequest
 from app.products.model import AgriculturalProduct
 from app.market_prices.model import MarketPrice
-from app.recommendations.model import Recommendation
+from app.recommendations.model import Recommendation, RecommendationSMSDelivery
+from app.integrations.google_earth_engine.cache_model import EnvironmentalCache
 from app.notifications.model import Notification
 from app.sms_sessions.model import SMSSession
 from app.advisory.model import Advisory

@@ -94,8 +94,8 @@ EXPERT_FLOW = [
 PROFILE_FLOW = [
     {
         "key": "action",
-        "question": "Hi {name}, what would you like to update?\n1. Name\n2. County\n3. Add Crop\n4. Add Livestock\n5. View Profile\n6. Sub-county and ward",
-        "choices": {"1": "name", "2": "county", "3": "add_crop", "4": "add_livestock", "5": "view", "6": "sub_county_ward"},
+        "question": "Hi {name}, what would you like to update?\n1. Name\n2. County\n3. Add Crop\n4. Add Livestock\n5. View Profile\n6. Sub-county and ward\n7. Exact coordinates",
+        "choices": {"1": "name", "2": "county", "3": "add_crop", "4": "add_livestock", "5": "view", "6": "sub_county_ward", "7": "coordinates"},
     },
     # Step 1 branches — handled dynamically in the SMS handler
     {
