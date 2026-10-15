@@ -1,4 +1,6 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Header, Request
 from fastapi.responses import JSONResponse
 
 from app.database.sessions import SessionLocal
@@ -9,6 +11,7 @@ from app.recommendations.sms_service import RecommendationSMSService
 from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["SMS"])
+logger = logging.getLogger(__name__)
 
 
 def _handle_sms(phone_number: str, text: str, message_id: str | None) -> None:
@@ -21,19 +24,38 @@ def _handle_sms(phone_number: str, text: str, message_id: str | None) -> None:
 
 
 @router.post("/sms")
-def sms_callback(
+async def sms_callback(
+    request: Request,
     background_tasks: BackgroundTasks,
-    from_: str = Form(..., alias="from"),
-    to: str = Form(...),
-    text: str = Form(default=""),
-    id: str | None = Form(default=None),
-    date: str | None = Form(default=None),
-    linkId: str | None = Form(default=None),
     webhook_secret: str | None = Header(default=None, alias="X-Webhook-Secret"),
 ):
     """Africa's Talking inbound SMS webhook."""
     verify_webhook_secret(webhook_secret)
-    background_tasks.add_task(_handle_sms, phone_number=from_, text=text, message_id=id)
+    content_type = request.headers.get("content-type", "").lower()
+    try:
+        payload = await request.json() if "json" in content_type else await request.form()
+    except (ValueError, TypeError):
+        payload = {}
+
+    def field(*names: str) -> str | None:
+        for name in names:
+            value = payload.get(name) if hasattr(payload, "get") else None
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return None
+
+    # The destination number and delivery metadata are not needed to process a reply.
+    sender = field("from", "phoneNumber", "phone_number", "sender")
+    if not sender:
+        logger.warning("Ignoring inbound SMS webhook without a sender field")
+        return JSONResponse({"status": "ignored", "reason": "sender_missing"})
+
+    background_tasks.add_task(
+        _handle_sms,
+        phone_number=sender,
+        text=field("text", "message", "body") or "",
+        message_id=field("id", "messageId", "message_id"),
+    )
     return JSONResponse({"status": "received"})
 
 

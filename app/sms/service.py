@@ -15,6 +15,7 @@ class SMSService:
         "AgriTech AI commands:\n"
         "HELP - Show this message\n"
         "STATUS - Check your account status\n"
+        "For numbered questions, reply with the option number. For open questions, type your answer.\n"
         "Dial *384*123# for USSD services."
     )
 
