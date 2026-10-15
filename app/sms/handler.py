@@ -48,6 +48,20 @@ class SMSHandler:
         if expert_service.handle_farmer_resolution(farmer, text):
             return
 
+        command = text.upper()
+        if command == "STOP":
+            self._cancel_active_session(phone, farmer)
+            return
+        if command in {"HELP", ""}:
+            self._send_help(phone, farmer.full_name)
+            return
+        if command == "MENU":
+            self.sms.send_sms(phone, f"Hi {farmer.full_name}, dial *384# to access the main menu.")
+            return
+        if command == "STATUS":
+            self._send_status(phone, farmer)
+            return
+
         # ── Profile completion (new farmers only) ────────────────────
         if not farmer.profile_complete:
             if farmer.full_name == "New Farmer":
@@ -67,22 +81,6 @@ class SMSHandler:
             return
         if text.upper().startswith("LOCATION:"):
             self._handle_location_update(phone, farmer, text[9:].strip())
-            return
-
-        command = text.upper()
-
-        # Global commands
-        if command == "STOP":
-            self._cancel_active_session(phone, farmer)
-            return
-        if command in {"HELP", ""}:
-            self._send_help(phone, farmer.full_name)
-            return
-        if command == "MENU":
-            self.sms.send_sms(phone, f"Hi {farmer.full_name}, dial *384# to access the main menu.")
-            return
-        if command == "STATUS":
-            self._send_status(phone, farmer)
             return
 
         # Route to active session
@@ -140,6 +138,18 @@ class SMSHandler:
                 self.sms.send_sms(phone, "Please send an answer.\n" + format_question(step_def, name=farmer.full_name))
                 return
             stored_value = text
+
+        if service_key == "profile_update" and step_def["key"] == "new_value":
+            data = self.session_service.get_data(session)
+            validation_error = self._profile_value_error(data.get("action", ""), stored_value)
+            if validation_error:
+                self.session_service.record_invalid_reply(session)
+                self.sms.send_sms(
+                    phone,
+                    f"{validation_error}\n{self._profile_question(data.get('action', ''))}\n"
+                    "Reply with the corrected value. The profile session is still open.",
+                )
+                return
 
         # Mark message as processed
         if message_id:
@@ -264,10 +274,40 @@ class SMSHandler:
         )
 
     def _cancel_active_session(self, phone: str, farmer) -> None:
-        session = self.session_repo.get_active_by_phone(phone)
-        if session:
-            self.session_service.complete_session(session)
+        sessions = self.session_repo.get_all_active_by_farmer(farmer.id)
+        if sessions:
+            for session in sessions:
+                self.session_service.complete_session(session)
+            self.sms.send_sms(phone, "All active conversations cancelled. Dial *384# to start again.")
+            return
         self.sms.send_sms(phone, "Session cancelled. Dial *384# to start again.")
+
+    def _profile_value_error(self, action: str, value: str) -> str | None:
+        if action == "county":
+            from app.counties.repository import CountyRepository
+            if CountyRepository(self.db).get_by_name_fuzzy(value) is None:
+                return f"County '{value}' was not recognised."
+        elif action == "sub_county_ward":
+            parts = [part.strip() for part in value.split(",", 1)]
+            if len(parts) != 2 or not all(parts):
+                return "Enter both sub-county and ward, separated by a comma."
+        elif action == "coordinates":
+            try:
+                latitude_text, longitude_text = value.split(",", 1)
+                latitude, longitude = float(latitude_text.strip()), float(longitude_text.strip())
+                if not -4.7 <= latitude <= 5.1 or not 33.9 <= longitude <= 41.9:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return "Coordinates must be latitude, longitude within Kenya."
+        elif action == "add_crop":
+            from app.crops.model import Crop
+            if self.db.query(Crop).filter(Crop.name.ilike(value)).first() is None:
+                return f"Crop '{value}' was not recognised."
+        elif action == "add_livestock":
+            from app.livestock.model import Livestock
+            if self.db.query(Livestock).filter(Livestock.name.ilike(value)).first() is None:
+                return f"Livestock '{value}' was not recognised."
+        return None
 
     def _send_help(self, phone: str, name: str) -> None:
         self.sms.send_sms(

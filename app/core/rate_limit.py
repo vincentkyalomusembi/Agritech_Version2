@@ -1,8 +1,10 @@
 """
-Per-phone-number rate limiting using Redis sliding window counters.
+Per-phone-number rate limiting using fixed Nairobi clock-hour/day buckets.
 """
 import redis
 from fastapi import Request
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 
@@ -10,18 +12,21 @@ from app.core.config import settings
 def check_rate_limit(r: redis.Redis, phone: str) -> bool:
     """
     Returns True if the request is allowed, False if rate limit exceeded.
-    Enforces:
+    Enforces, only when a new service actually starts:
       - max RATE_LIMIT_PER_HOUR requests per hour
       - max RATE_LIMIT_PER_DAY requests per day
     """
-    hour_key = f"rl:hour:{phone}"
-    day_key = f"rl:day:{phone}"
+    now = datetime.now(ZoneInfo("Africa/Nairobi"))
+    hour_key = f"rl:hour:{phone}:{now:%Y%m%d%H}"
+    day_key = f"rl:day:{phone}:{now:%Y%m%d}"
 
     pipe = r.pipeline()
     pipe.incr(hour_key)
-    pipe.expire(hour_key, 3600)
+    # Bucket names define fixed Nairobi clock-hour/day windows. Longer TTLs
+    # only clean old keys; refreshing them cannot extend the active window.
+    pipe.expire(hour_key, 7200)
     pipe.incr(day_key)
-    pipe.expire(day_key, 86400)
+    pipe.expire(day_key, 172800)
     results = pipe.execute()
 
     hour_count = results[0]

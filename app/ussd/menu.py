@@ -48,7 +48,7 @@ EXPERT_CONFIRMATION = "END Your Expert Request session has started. Continue via
 PROFILE_CONFIRMATION = "END Your Profile session has started. Continue via SMS."
 SUBSCRIBE_CONFIRMATION = "END Your Subscription session has started. Continue via SMS."
 
-SESSION_ACTIVE = "END You have an active {service} session. Reply STOP via SMS to cancel, then dial again."
+SESSION_ACTIVE = "END You have an active {service} conversation. Finish it or reply STOP by SMS to cancel it before choosing another service."
 
 GOODBYE = "END Thank you for using AgriTech AI. Goodbye."
 INVALID_OPTION = "END Invalid option. Please dial *384# and try again."
