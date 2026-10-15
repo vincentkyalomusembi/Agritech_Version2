@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.tasks.mpesa_tasks",
         "app.tasks.subscription_tasks",
         "app.tasks.expert_tasks",
+        "app.tasks.environment_tasks",
     ],
 )
 
@@ -37,6 +38,10 @@ celery_app.conf.update(
         "expire-expert-offers": {
             "task": "app.tasks.expert_tasks.expire_expert_offers",
             "schedule": 300.0,
+        },
+        "refresh-environmental-cache": {
+            "task": "app.tasks.environment_tasks.refresh_environmental_cache",
+            "schedule": 86400.0,
         },
     },
 )

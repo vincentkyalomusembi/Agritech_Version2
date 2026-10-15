@@ -23,6 +23,7 @@ google-genai
 
 # Google Earth Engine
 earthengine-api
+google-auth
 
 # Machine Learning
 scikit-learn

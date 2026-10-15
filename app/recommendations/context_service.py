@@ -6,6 +6,7 @@ from app.farmers.repository import FarmerRepository
 from app.farmer_crops.repository import FarmerCropRepository
 from app.farmer_livestocks.repository import FarmerLivestockRepository
 from app.integrations.google_earth_engine.service import EarthEngineService
+from app.integrations.google_earth_engine.cache_service import EnvironmentalCacheService
 from app.integrations.openweather.client import OpenWeatherClient
 from app.market_prices.repository import MarketPriceRepository
 
@@ -28,6 +29,7 @@ class RecommendationContextService:
 
         self.weather = OpenWeatherClient()
         self.environment = EarthEngineService()
+        self.environment_cache = EnvironmentalCacheService(db, self.environment)
 
     def build_context(self, farmer_id: UUID) -> dict:
         """
@@ -50,8 +52,8 @@ class RecommendationContextService:
         if county is None:
             raise ValueError("Farmer does not have a county assigned.")
 
-        latitude = county.latitude
-        longitude = county.longitude
+        latitude = farmer.latitude if farmer.latitude is not None else county.latitude
+        longitude = farmer.longitude if farmer.longitude is not None else county.longitude
 
         
         # 3. Get farmer's registered crops
@@ -107,18 +109,13 @@ class RecommendationContextService:
         # GEE data may occasionally be unavailable for a location.
         # A missing environmental dataset should not prevent the
         # farmer from receiving a recommendation.
-        try:
-            environment = self.environment.get_environment(
-                latitude,
-                longitude,
-            )
-        except Exception as exc:
-            print(f"GEE environment unavailable: {exc}")
-
-            environment = {
-                "ndvi": None,
-                "rainfall": None,
-            }
+        environment = self.environment_cache.get_for_farmer(farmer)
+        if environment is None:
+            try:
+                environment = self.environment.get_environment(latitude, longitude)
+            except Exception as exc:
+                print(f"GEE environment unavailable: {exc}")
+                environment = {"ndvi": None, "rainfall": None}
 
         
         # 7. Get market prices for the farmer's county
@@ -175,8 +172,10 @@ class RecommendationContextService:
             weather = self.weather.get_weather_summary(latitude, longitude)
         except Exception:
             weather = None
-        try:
-            observations = self.environment.get_environment(latitude, longitude)
-        except Exception:
-            observations = None
+        observations = self.environment_cache.get_for_farmer(farmer)
+        if observations is None:
+            try:
+                observations = self.environment.get_environment(latitude, longitude)
+            except Exception:
+                observations = None
         return {"latitude": latitude, "longitude": longitude, "weather_forecast": weather, "observations": observations}

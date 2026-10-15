@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     func,
+    Index,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.dialects.postgresql import JSONB
@@ -86,3 +87,25 @@ class Recommendation(Base):
         default=False,
         nullable=False,
     )
+
+    sms_deliveries = relationship(
+        "RecommendationSMSDelivery", back_populates="recommendation", cascade="all, delete-orphan"
+    )
+
+
+class RecommendationSMSDelivery(Base):
+    """One provider submission and its eventual delivery report."""
+    __tablename__ = "recommendation_sms_deliveries"
+    __table_args__ = (Index("ix_recommendation_sms_deliveries_provider_id", "provider_message_id", unique=True),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recommendation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    recipient_phone: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_message_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="submitted")
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    delivered_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recommendation = relationship("Recommendation", back_populates="sms_deliveries")
