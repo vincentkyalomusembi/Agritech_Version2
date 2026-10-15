@@ -1,4 +1,6 @@
-from pydantic import Field
+from urllib.parse import quote, urlsplit
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,8 +35,12 @@ class Settings(BaseSettings):
     GEE_CREDENTIALS: str = ""
     GEE_CREDENTIALS_JSON: str = Field(default="", repr=False)
 
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Redis/Upstash: use the TLS connection string from the Upstash console.
+    # It must use rediss:// for Celery, rate limiting, and Redis pipelines.
+    REDIS_URL: str = ""
+    REDIS_SOCKET_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=60)
+    UPSTASH_REDIS_REST_URL: str = ""
+    UPSTASH_REDIS_REST_TOKEN: str = Field(default="", repr=False)
 
     # M-Pesa Daraja
     MPESA_CONSUMER_KEY: str = ""
@@ -56,6 +62,21 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=True,
     )
+
+    @model_validator(mode="after")
+    def configure_upstash_redis(self):
+        if self.REDIS_URL:
+            return self
+        if not self.UPSTASH_REDIS_REST_URL or not self.UPSTASH_REDIS_REST_TOKEN:
+            return self
+
+        parsed = urlsplit(self.UPSTASH_REDIS_REST_URL)
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ValueError("UPSTASH_REDIS_REST_URL must be an https:// Upstash REST URL.")
+
+        password = quote(self.UPSTASH_REDIS_REST_TOKEN, safe="")
+        self.REDIS_URL = f"rediss://default:{password}@{parsed.hostname}:6379"
+        return self
 
 
 settings = Settings()

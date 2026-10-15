@@ -41,7 +41,7 @@ africastalking
 
 # Background Tasks — Celery + Redis
 celery[redis]
-redis
+redis>=5.0,<7.0
 
 # Web Scraping
 beautifulsoup4
