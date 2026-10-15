@@ -14,7 +14,7 @@ from app.counties.repository import CountyRepository
 from app.farmers.model import Farmer
 from app.farmers.repository import FarmerRepository
 from app.farmers.utils import normalize_phone_number
-from app.sms.flows import FLOWS, NO_QUESTION_SERVICES
+from app.sms.flows import FLOWS, NO_QUESTION_SERVICES, format_question
 from app.sms_sessions.model import SessionType
 from app.sms_sessions.repository import SMSSessionRepository
 from app.sms_sessions.service import SMSSessionService
@@ -108,7 +108,7 @@ class USSDService:
             self._send_sms(
                 phone,
                 "Welcome to AgriTech AI! Account created.\n"
-                "What is your full name?",
+                "What is your full name? Reply by typing your answer.",
             )
             return menu.REG_SUCCESS
 
@@ -177,7 +177,7 @@ class USSDService:
         flow = FLOWS.get(service_key, [])
         if flow:
             session_data = None
-            first_q = flow[0]["question"].format(name=farmer.full_name.split()[0], plan="")
+            first_q = format_question(flow[0], name=farmer.full_name.split()[0])
             if service_key == "subscription":
                 session_data, first_q = self._subscription_quote_payload(farmer)
             session = self.session_service.start_session(

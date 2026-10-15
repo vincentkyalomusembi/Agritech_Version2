@@ -10,7 +10,7 @@ from app.core.africas_talking import AfricasTalkingClient
 from app.core.redis_client import get_redis
 from app.farmers.repository import FarmerRepository
 from app.farmers.utils import normalize_phone_number
-from app.sms.flows import FLOWS, NO_QUESTION_SERVICES, PLAN_PRICES
+from app.sms.flows import FLOWS, NO_QUESTION_SERVICES, PLAN_PRICES, format_question
 from app.sms_sessions.model import SessionType
 from app.sms_sessions.repository import SMSSessionRepository
 from app.sms_sessions.service import SMSSessionService
@@ -130,13 +130,14 @@ class SMSHandler:
                     return
                 self.sms.send_sms(
                     phone,
-                    f"Please reply with one of: {', '.join(choices.keys())}.\n{step_def['question'].format(name=farmer.full_name, plan='')}",
+                    f"That reply does not match an option. Choose {', '.join(choices.keys())} and reply with its number.\n"
+                    f"{format_question(step_def, name=farmer.full_name)}",
                 )
                 return
             stored_value = choices[text]
         else:
             if not text:
-                self.sms.send_sms(phone, "Reply cannot be empty. " + step_def["question"].format(name=farmer.full_name, plan=""))
+                self.sms.send_sms(phone, "Please send an answer.\n" + format_question(step_def, name=farmer.full_name))
                 return
             stored_value = text
 
@@ -166,10 +167,7 @@ class SMSHandler:
             next_def = flow[next_step]
             # Build dynamic question text
             data = self.session_service.get_data(session)
-            question = next_def["question"].format(
-                name=farmer.full_name,
-                plan=data.get("plan", ""),
-            )
+            question = format_question(next_def, name=farmer.full_name, plan=data.get("plan", ""))
             # Handle conditional step — skip if condition not met
             if "condition_key" in next_def:
                 if data.get(next_def["condition_key"]) != next_def.get("condition_value"):
@@ -182,6 +180,7 @@ class SMSHandler:
                 if not question:
                     self.session_service.complete_session(session)
                     return
+                question += "\nReply by typing your answer."
             self.sms.send_sms(phone, question)
         else:
             # All questions answered — dispatch background task
@@ -273,7 +272,9 @@ class SMSHandler:
     def _send_help(self, phone: str, name: str) -> None:
         self.sms.send_sms(
             phone,
-            f"Hi {name}, AgriTech AI commands:\nSTOP - Cancel session\nSTATUS - Account status\nMENU - Return to menu\nDial *384# for services.",
+            f"Hi {name}, AgriTech AI commands:\nSTOP - Cancel session\nSTATUS - Account status\nMENU - Return to menu\n"
+            "For numbered questions, reply with the option number. For open questions, type your answer.\n"
+            "Dial *384# for services.",
         )
 
     def _send_status(self, phone: str, farmer) -> None:
@@ -297,20 +298,20 @@ class SMSHandler:
 
     def _handle_name_update(self, phone: str, farmer, name: str) -> None:
         if not name:
-            self.sms.send_sms(phone, "What is your full name?")
+            self.sms.send_sms(phone, "What is your full name? Reply by typing your answer.")
             return
         farmer.full_name = name
         self.farmer_repo.update(farmer)
-        self.sms.send_sms(phone, f"Thanks {name}! Which county are you in?")
+        self.sms.send_sms(phone, f"Thanks {name}! Which county are you in? Reply by typing the county name.")
 
     def _handle_county_update(self, phone: str, farmer, county_name: str) -> None:
         from app.counties.repository import CountyRepository
         if not county_name:
-            self.sms.send_sms(phone, "Which county are you in?")
+            self.sms.send_sms(phone, "Which county are you in? Reply by typing the county name.")
             return
         county = CountyRepository(self.db).get_by_name_fuzzy(county_name)
         if not county:
-            self.sms.send_sms(phone, f"County '{county_name}' not found. Try again, e.g. Nairobi, Kisumu, Nakuru.")
+            self.sms.send_sms(phone, f"County '{county_name}' not found. Type a county name, e.g. Nairobi, Kisumu, Nakuru.")
             return
         farmer.county_id = county.id
         farmer.profile_complete = True

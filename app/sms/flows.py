@@ -137,3 +137,18 @@ FLOWS = {
     "profile_update": PROFILE_FLOW,
     "subscription": SUBSCRIPTION_FLOW,
 }
+
+
+def format_question(step: dict, *, name: str = "", plan: str = "") -> str:
+    """Render a flow prompt with a clear reply mode for basic-phone users."""
+    question = step.get("question", "").format(name=name, plan=plan).strip()
+    if not question:
+        return question
+    instruction = (
+        "Reply with the number only."
+        if step.get("choices")
+        else "Reply by typing your answer."
+    )
+    if instruction.lower() in question.lower():
+        return question
+    return f"{question}\n{instruction}"

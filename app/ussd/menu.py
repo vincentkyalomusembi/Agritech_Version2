@@ -27,7 +27,7 @@ NOT_REGISTERED = "END Phone not registered. Select 1 to register."
 
 # ── Main Menu ─────────────────────────────────────────────────────────
 MAIN_MENU = (
-    "CON AgriTech AI Menu\n"
+    "CON AgriTech AI Menu (enter a number)\n"
     "1. Crop Recommendations\n"
     "2. Livestock Recommendations\n"
     "3. Weather Alerts\n"
