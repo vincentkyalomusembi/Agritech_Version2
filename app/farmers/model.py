@@ -53,6 +53,13 @@ class Farmer(Base):
         index=True,
     )
 
+    constituency_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("constituencies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    ward_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wards.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     latitude: Mapped[float | None] = mapped_column(nullable=True)
     longitude: Mapped[float | None] = mapped_column(nullable=True)
     sub_county: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -85,6 +92,9 @@ class Farmer(Base):
         "County",
         back_populates="farmers",
     )
+
+    constituency = relationship("Constituency")
+    selected_ward = relationship("Ward")
 
     crops = relationship(
         "FarmerCrop",

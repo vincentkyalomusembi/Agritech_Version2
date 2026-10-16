@@ -2,6 +2,7 @@ import app.models
 from app.database.sessions import SessionLocal
 
 from app.database.seeders.counties import seed_counties
+from app.database.seeders.administrative_units import seed_administrative_units
 from app.database.seeders.crops import seed_crops
 from app.database.seeders.livestock import seed_livestock
 from app.database.seeders.experts import seed_experts
@@ -18,6 +19,9 @@ def seed_database():
 
         print("\n1. Seeding Counties...")
         seed_counties(db)
+
+        print("\n1b. Seeding constituencies and wards...")
+        seed_administrative_units(db)
 
         print("\n2. Seeding Crops...")
         seed_crops(db)

@@ -58,6 +58,17 @@ class CHIRPSService:
             .select("precipitation")
         )
 
+        latest_timestamp = collection.aggregate_max("system:time_start").getInfo()
+        if latest_timestamp is None:
+            return {
+                "dataset": "CHIRPS Daily",
+                "period_days": days,
+                "rainfall_mm": None,
+                "rainfall_status": "unavailable",
+                "data_through_date": None,
+                "available": False,
+            }
+
         rainfall_image = collection.sum()
 
         result = rainfall_image.reduceRegion(
@@ -67,16 +78,33 @@ class CHIRPSService:
             maxPixels=1e9,
         )
 
+        if not result.contains("precipitation").getInfo():
+            return {
+                "dataset": "CHIRPS Daily",
+                "period_days": days,
+                "rainfall_mm": None,
+                "rainfall_status": "unavailable",
+                "data_through_date": datetime.utcfromtimestamp(latest_timestamp / 1000).strftime("%Y-%m-%d"),
+                "available": False,
+            }
         rainfall = result.get("precipitation").getInfo()
-
         if rainfall is None:
-            raise ValueError(
-                "No rainfall data available."
-            )
+            return {
+                "dataset": "CHIRPS Daily",
+                "period_days": days,
+                "rainfall_mm": None,
+                "rainfall_status": "unavailable",
+                "data_through_date": datetime.utcfromtimestamp(latest_timestamp / 1000).strftime("%Y-%m-%d"),
+                "available": False,
+            }
 
         return {
             "dataset": "CHIRPS Daily",
             "period_days": days,
             "rainfall_mm": round(rainfall, 1),
             "rainfall_status": self.classify_rainfall(rainfall),
+            "data_through_date": datetime.utcfromtimestamp(latest_timestamp / 1000).strftime("%Y-%m-%d"),
+            "period_start_date": start_date.strftime("%Y-%m-%d"),
+            "coverage_days": max(0, (datetime.utcfromtimestamp(latest_timestamp / 1000).date() - start_date.date()).days + 1),
+            "available": True,
         }

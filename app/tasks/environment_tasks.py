@@ -4,6 +4,7 @@ from datetime import date
 from app.core.celery_app import celery_app
 from app.database.sessions import SessionLocal
 from app.farmers.model import Farmer
+from app.farmers.location import farmer_coordinates
 from app.integrations.google_earth_engine.cache_model import EnvironmentalCache
 from app.integrations.google_earth_engine.cache_service import EnvironmentalCacheService
 from app.integrations.google_earth_engine.service import EarthEngineService
@@ -20,8 +21,7 @@ def refresh_environmental_cache() -> dict:
             if farmer.county is None:
                 continue
             region_type, region_name = EnvironmentalCacheService.region_for_farmer(farmer)
-            latitude = farmer.latitude if farmer.latitude is not None else farmer.county.latitude
-            longitude = farmer.longitude if farmer.longitude is not None else farmer.county.longitude
+            latitude, longitude, _ = farmer_coordinates(farmer)
             groups[(region_type, region_name, farmer.county.id)].append((latitude, longitude))
 
         engine = EarthEngineService()

@@ -5,6 +5,7 @@ import app.models
 # Auth & Farmers
 from app.auth.router import router as auth_router
 from app.farmers.routes import router as farmers_router
+from app.counties.routes import router as counties_router
 from app.farmer_crops.routes import router as farmer_crops_router
 from app.farmer_livestocks.routes import router as farmer_livestocks_router
 
@@ -41,6 +42,7 @@ app = FastAPI(
 
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(farmers_router)
+app.include_router(counties_router)
 app.include_router(farmer_crops_router)
 app.include_router(farmer_livestocks_router)
 app.include_router(ussd_router)

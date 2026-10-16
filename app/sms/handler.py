@@ -80,7 +80,11 @@ class SMSHandler:
             self._handle_county_update(phone, farmer, text[7:].strip())
             return
         if text.upper().startswith("LOCATION:"):
-            self._handle_location_update(phone, farmer, text[9:].strip())
+            self.sms.send_sms(
+                phone,
+                "You do not need to type coordinates. On the web profile, use the map to set your farm location. "
+                "On this phone, choose My Profile to update your county, sub-county and ward.",
+            )
             return
 
         # Route to active session
@@ -106,13 +110,11 @@ class SMSHandler:
         step_def = flow[step]
 
         # Handle conditional steps (e.g. symptom description only if has_symptoms=Yes)
-        if "condition_key" in step_def:
-            data = self.session_service.get_data(session)
-            if data.get(step_def["condition_key"]) != step_def["condition_value"]:
-                # Skip this step
-                self.session_service.advance_step(session, step_def["key"], "N/A")
-                self._continue_or_complete(session, farmer, phone, service_key, flow)
-                return
+        data = self.session_service.get_data(session)
+        if self._should_skip_step(step_def, data):
+            self.session_service.advance_step(session, step_def["key"], "N/A")
+            self._continue_or_complete(session, farmer, phone, service_key, flow)
+            return
 
         # Validate reply
         choices = step_def.get("choices")
@@ -139,14 +141,14 @@ class SMSHandler:
                 return
             stored_value = text
 
-        if service_key == "profile_update" and step_def["key"] == "new_value":
+        if service_key == "profile_update":
             data = self.session_service.get_data(session)
-            validation_error = self._profile_value_error(data.get("action", ""), stored_value)
+            validation_error = self._profile_step_error(step_def["key"], data, stored_value, farmer.id)
             if validation_error:
                 self.session_service.record_invalid_reply(session)
                 self.sms.send_sms(
                     phone,
-                    f"{validation_error}\n{self._profile_question(data.get('action', ''))}\n"
+                    f"{validation_error}\n{self._profile_question(data.get('action', '')) if step_def['key'] == 'new_value' else format_question(step_def, name=farmer.full_name)}\n"
                     "Reply with the corrected value. The profile session is still open.",
                 )
                 return
@@ -179,11 +181,10 @@ class SMSHandler:
             data = self.session_service.get_data(session)
             question = format_question(next_def, name=farmer.full_name, plan=data.get("plan", ""))
             # Handle conditional step — skip if condition not met
-            if "condition_key" in next_def:
-                if data.get(next_def["condition_key"]) != next_def.get("condition_value"):
-                    self.session_service.advance_step(session, next_def["key"], "N/A")
-                    self._continue_or_complete(session, farmer, phone, service_key, flow)
-                    return
+            if self._should_skip_step(next_def, data):
+                self.session_service.advance_step(session, next_def["key"], "N/A")
+                self._continue_or_complete(session, farmer, phone, service_key, flow)
+                return
             # Dynamic profile question
             if service_key == "profile_update" and next_def["key"] == "new_value":
                 question = self._profile_question(data.get("action", ""))
@@ -265,13 +266,43 @@ class SMSHandler:
 
     def _send_profile(self, session, farmer, phone: str) -> None:
         self.session_service.complete_session(session)
-        crops = ", ".join(fc.crop.name for fc in farmer.crops) if farmer.crops else "None"
-        livestock = ", ".join(fl.livestock.name for fl in farmer.livestock) if farmer.livestock else "None"
-        local_area = ", ".join(value for value in (farmer.sub_county, farmer.ward) if value) or "Not set"
+        crops = ", ".join(f"{fc.crop.name} ({fc.farm_size:g} acres)" for fc in farmer.crops) if farmer.crops else "None"
+        livestock = ", ".join(f"{fl.livestock.name} ({fl.herd_size})" for fl in farmer.livestock) if farmer.livestock else "None"
+        sub_county = farmer.sub_county or "Not set"
+        ward = farmer.ward or "Not set"
+        map_location = "Saved from web map" if farmer.latitude is not None and farmer.longitude is not None else "Not set; county and ward will be used"
         self.sms.send_sms(
             phone,
-            f"Your Profile:\nName: {farmer.full_name}\nCounty: {farmer.county.name}\nSub-county/Ward: {local_area}\nCrops: {crops}\nLivestock: {livestock}\nDial *384# for more options.",
+            f"Your Profile:\nName: {farmer.full_name}\nCounty: {farmer.county.name}\n"
+            f"Sub-county: {sub_county}\nWard: {ward}\nFarm location: {map_location}\n"
+            f"Crops: {crops}\nLivestock: {livestock}\n"
+            "Reply MENU to return.",
         )
+
+    @staticmethod
+    def _should_skip_step(step_def: dict, data: dict) -> bool:
+        if "condition_key" in step_def and data.get(step_def["condition_key"]) != step_def.get("condition_value"):
+            return True
+        if "condition_action" in step_def and data.get("action") != step_def["condition_action"]:
+            return True
+        return False
+
+    def _profile_step_error(self, step_key: str, data: dict, value: str, farmer_id) -> str | None:
+        if step_key == "new_value":
+            return self._profile_value_error(data.get("action", ""), value, farmer_id)
+        if step_key == "farm_size":
+            try:
+                if float(value) <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return "Farm size must be a number greater than zero."
+        if step_key == "herd_size":
+            try:
+                if int(value) <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return "Animal count must be a whole number greater than zero."
+        return None
 
     def _cancel_active_session(self, phone: str, farmer) -> None:
         sessions = self.session_repo.get_all_active_by_farmer(farmer.id)
@@ -282,7 +313,7 @@ class SMSHandler:
             return
         self.sms.send_sms(phone, "Session cancelled. Dial *384# to start again.")
 
-    def _profile_value_error(self, action: str, value: str) -> str | None:
+    def _profile_value_error(self, action: str, value: str, farmer_id=None) -> str | None:
         if action == "county":
             from app.counties.repository import CountyRepository
             if CountyRepository(self.db).get_by_name_fuzzy(value) is None:
@@ -290,23 +321,37 @@ class SMSHandler:
         elif action == "sub_county_ward":
             parts = [part.strip() for part in value.split(",", 1)]
             if len(parts) != 2 or not all(parts):
-                return "Enter both sub-county and ward, separated by a comma."
-        elif action == "coordinates":
-            try:
-                latitude_text, longitude_text = value.split(",", 1)
-                latitude, longitude = float(latitude_text.strip()), float(longitude_text.strip())
-                if not -4.7 <= latitude <= 5.1 or not 33.9 <= longitude <= 41.9:
-                    raise ValueError
-            except (ValueError, TypeError):
-                return "Coordinates must be latitude, longitude within Kenya."
+                return "Enter constituency/sub-county and ward, separated by a comma."
+            from app.counties.model import Constituency, Ward
+            farmer = self.farmer_repo.get_by_id(farmer_id) if farmer_id else None
+            constituency = self.db.query(Constituency).filter(
+                Constituency.county_id == farmer.county_id,
+                Constituency.name.ilike(parts[0]),
+            ).first() if farmer else None
+            if constituency is None:
+                return f"'{parts[0]}' is not a constituency/sub-county in your county. Check your county and try again."
+            ward = self.db.query(Ward).filter(
+                Ward.constituency_id == constituency.id,
+                Ward.name.ilike(parts[1]),
+            ).first()
+            if ward is None:
+                return f"'{parts[1]}' is not a ward in {constituency.name}. Enter the ward in that constituency."
         elif action == "add_crop":
             from app.crops.model import Crop
-            if self.db.query(Crop).filter(Crop.name.ilike(value)).first() is None:
+            from app.farmer_crops.model import FarmerCrop
+            crop = self.db.query(Crop).filter(Crop.name.ilike(value)).first()
+            if crop is None:
                 return f"Crop '{value}' was not recognised."
+            if farmer_id and self.db.query(FarmerCrop).filter_by(farmer_id=farmer_id, crop_id=crop.id).first():
+                return f"{crop.name} is already on your profile. Choose another crop."
         elif action == "add_livestock":
             from app.livestock.model import Livestock
-            if self.db.query(Livestock).filter(Livestock.name.ilike(value)).first() is None:
+            from app.farmer_livestocks.model import FarmerLivestock
+            livestock = self.db.query(Livestock).filter(Livestock.name.ilike(value)).first()
+            if livestock is None:
                 return f"Livestock '{value}' was not recognised."
+            if farmer_id and self.db.query(FarmerLivestock).filter_by(farmer_id=farmer_id, livestock_id=livestock.id).first():
+                return f"{livestock.name} is already on your profile. Choose another type."
         return None
 
     def _send_help(self, phone: str, name: str) -> None:
@@ -331,8 +376,7 @@ class SMSHandler:
             "county": "Enter your new county name:",
             "add_crop": "Enter the crop name to add:",
             "add_livestock": "Enter the livestock type to add:",
-            "sub_county_ward": "Enter your sub-county and ward separated by a comma (for example: Kikuyu, Muguga):",
-            "coordinates": "Send latitude and longitude separated by a comma (for example: -0.3031, 36.0800):",
+            "sub_county_ward": "Enter constituency/sub-county and ward separated by a comma (for example: Kikuyu, Muguga):",
         }
         return questions.get(action, "")
 
@@ -354,6 +398,12 @@ class SMSHandler:
             self.sms.send_sms(phone, f"County '{county_name}' not found. Type a county name, e.g. Nairobi, Kisumu, Nakuru.")
             return
         farmer.county_id = county.id
+        farmer.sub_county = None
+        farmer.ward = None
+        farmer.constituency_id = None
+        farmer.ward_id = None
+        farmer.latitude = None
+        farmer.longitude = None
         farmer.profile_complete = True
         self.farmer_repo.update(farmer)
         self.sms.send_sms(
@@ -361,19 +411,3 @@ class SMSHandler:
             f"Profile complete! Welcome {farmer.full_name}, {county.name}.\n"
             "Dial *384# to access all services.",
         )
-
-    def _handle_location_update(self, phone: str, farmer, value: str) -> None:
-        try:
-            latitude_text, longitude_text = value.split(",", 1)
-            latitude = float(latitude_text.strip())
-            longitude = float(longitude_text.strip())
-        except (ValueError, TypeError):
-            self.sms.send_sms(phone, "Invalid location. Reply LOCATION: latitude,longitude.")
-            return
-        if not -4.7 <= latitude <= 5.1 or not 33.9 <= longitude <= 41.9:
-            self.sms.send_sms(phone, "Location must be within Kenya. Reply LOCATION: latitude,longitude.")
-            return
-        farmer.latitude = latitude
-        farmer.longitude = longitude
-        self.farmer_repo.update(farmer)
-        self.sms.send_sms(phone, "Exact farm location saved. Future weather and satellite results will use it.")

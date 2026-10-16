@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.farmers.repository import FarmerRepository
+from app.farmers.location import farmer_coordinates
 from app.farmer_crops.repository import FarmerCropRepository
 from app.farmer_livestocks.repository import FarmerLivestockRepository
 from app.integrations.google_earth_engine.service import EarthEngineService
@@ -52,8 +53,7 @@ class RecommendationContextService:
         if county is None:
             raise ValueError("Farmer does not have a county assigned.")
 
-        latitude = farmer.latitude if farmer.latitude is not None else county.latitude
-        longitude = farmer.longitude if farmer.longitude is not None else county.longitude
+        latitude, longitude, _ = farmer_coordinates(farmer)
 
         
         # 3. Get farmer's registered crops
@@ -164,8 +164,7 @@ class RecommendationContextService:
     def environmental_context(self, farmer) -> dict:
         """Collect best available farm-point weather, rainfall and vegetation data."""
         county = farmer.county
-        latitude = farmer.latitude if farmer.latitude is not None else getattr(county, "latitude", None)
-        longitude = farmer.longitude if farmer.longitude is not None else getattr(county, "longitude", None)
+        latitude, longitude, location_source = farmer_coordinates(farmer)
         if latitude is None or longitude is None:
             return {"latitude": latitude, "longitude": longitude, "weather_forecast": None, "observations": None}
         try:
@@ -178,4 +177,5 @@ class RecommendationContextService:
                 observations = self.environment.get_environment(latitude, longitude)
             except Exception:
                 observations = None
-        return {"latitude": latitude, "longitude": longitude, "weather_forecast": weather, "observations": observations}
+        return {"latitude": latitude, "longitude": longitude, "location_source": location_source,
+                "weather_forecast": weather, "observations": observations}

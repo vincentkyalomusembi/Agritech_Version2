@@ -4,6 +4,7 @@ Fan-out: fetch all data in parallel, then call AI, then send SMS.
 """
 import json
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from celery import shared_task
@@ -98,7 +99,9 @@ def run_weather_alerts(self, session_id: str, farmer_id: str, phone: str):
     db = SessionLocal()
     try:
         from app.farmers.repository import FarmerRepository
+        from app.farmers.location import farmer_coordinates
         from app.integrations.openweather.client import OpenWeatherClient
+        from app.integrations.google_earth_engine.service import EarthEngineService
         from app.ai.gemini_service import GeminiService
         from app.sms_sessions.model import SMSSession
 
@@ -106,24 +109,42 @@ def run_weather_alerts(self, session_id: str, farmer_id: str, phone: str):
         svc = SMSSessionService(db)
         farmer = FarmerRepository(db).get_by_id(farmer_id)
 
-        weather = OpenWeatherClient().get_weather_summary(
-            farmer.county.latitude, farmer.county.longitude
-        )
+        latitude, longitude, _ = farmer_coordinates(farmer)
+        weather = OpenWeatherClient().get_weather_summary(latitude, longitude)
+        observations = None
+        try:
+            observations = EarthEngineService().get_environment(latitude, longitude)
+        except Exception:
+            logger.exception("GEE observations unavailable for weather alert farmer_id=%s", farmer.id)
         tip = _safe_fetch(lambda: GeminiService().generate_recommendation({
             "farmer": {"county": farmer.county.name},
             "weather": weather,
+            "satellite_observations": observations,
             "request": "Give a 1-sentence farming tip based on this weather.",
         }))
 
         current = weather.get("current", {})
         forecast_periods = weather.get("forecast", {}).get("periods", [])
-        tomorrow = forecast_periods[0] if forecast_periods else {}
+        tomorrow = next(
+            (period for period in forecast_periods if (period.get("time") or "")[:10] != datetime.utcnow().strftime("%Y-%m-%d")),
+            forecast_periods[0] if forecast_periods else {},
+        )
 
         msg = (
             f"Weather Alert for {farmer.county.name}:\n"
             f"Now: {current.get('weather','N/A')}, {current.get('temperature','?')}C\n"
-            f"Tomorrow: {tomorrow.get('weather','N/A')}, {tomorrow.get('temperature','?')}C\n"
+            f"Forecast {tomorrow.get('time','')}: {tomorrow.get('weather','N/A')}, "
+            f"{tomorrow.get('temperature','?')}C, rain {tomorrow.get('rainfall_mm', 0)}mm/3h\n"
         )
+        ndvi = (observations or {}).get("ndvi") or {}
+        if ndvi.get("available"):
+            msg += f"Satellite NDVI {ndvi.get('ndvi')} ({ndvi.get('image_date')}; MODIS observation).\n"
+        rainfall = (observations or {}).get("rainfall") or {}
+        if rainfall.get("available"):
+            msg += (
+                f"Observed CHIRPS rain {rainfall.get('rainfall_mm')}mm over "
+                f"{rainfall.get('coverage_days')} available days, through {rainfall.get('data_through_date')}.\n"
+            )
         if tip:
             msg += f"Tip: {tip}\n"
         msg += "Reply MENU to return."
@@ -146,6 +167,7 @@ def run_market_prices(self, session_id: str, farmer_id: str, phone: str):
     db = SessionLocal()
     try:
         from app.farmers.repository import FarmerRepository
+        from app.farmers.location import farmer_coordinates
         from app.farmer_crops.repository import FarmerCropRepository
         from app.market_prices.repository import MarketPriceRepository
         from app.sms_sessions.model import SMSSession
@@ -199,8 +221,7 @@ def run_disease_alert(self, session_id: str, farmer_id: str, phone: str):
         farmer = FarmerRepository(db).get_by_id(farmer_id)
         data = svc.get_data(session)
 
-        latitude = farmer.latitude if farmer.latitude is not None else farmer.county.latitude
-        longitude = farmer.longitude if farmer.longitude is not None else farmer.county.longitude
+        latitude, longitude, _ = farmer_coordinates(farmer)
         weather = _safe_fetch(lambda: OpenWeatherClient().get_weather_summary(
             latitude, longitude
         ))
@@ -297,8 +318,14 @@ def run_profile_update(self, session_id: str, farmer_id: str, phone: str):
             county = CountyRepository(db).get_by_name_fuzzy(new_value)
             if county:
                 farmer.county_id = county.id
+                farmer.sub_county = None
+                farmer.ward = None
+                farmer.constituency_id = None
+                farmer.ward_id = None
+                farmer.latitude = None
+                farmer.longitude = None
                 farmer_repo.update(farmer)
-                msg = f"County updated to {county.name}."
+                msg = f"County updated to {county.name}. Local area and coordinates cleared; update your ward if needed."
             else:
                 msg = f"County '{new_value}' not found. No changes made."
         elif action == "sub_county_ward":
@@ -306,37 +333,52 @@ def run_profile_update(self, session_id: str, farmer_id: str, phone: str):
             if len(parts) != 2 or not all(parts):
                 msg = "Please provide both sub-county and ward separated by a comma. No changes made."
             else:
-                farmer.sub_county, farmer.ward = parts
-                farmer_repo.update(farmer)
-                msg = f"Sub-county set to {parts[0]} and ward set to {parts[1]}."
-        elif action == "coordinates":
-            try:
-                latitude_text, longitude_text = new_value.split(",", 1)
-                latitude = float(latitude_text.strip())
-                longitude = float(longitude_text.strip())
-                if not -4.7 <= latitude <= 5.1 or not 33.9 <= longitude <= 41.9:
-                    raise ValueError
-                farmer.latitude, farmer.longitude = latitude, longitude
-                farmer_repo.update(farmer)
-                msg = "Exact farm location saved."
-            except (ValueError, TypeError):
-                msg = "Invalid location. Use latitude,longitude within Kenya."
+                from app.counties.model import Constituency, Ward
+                constituency = db.query(Constituency).filter(
+                    Constituency.county_id == farmer.county_id,
+                    Constituency.name.ilike(parts[0]),
+                ).first()
+                ward = db.query(Ward).filter(
+                    Ward.constituency_id == constituency.id,
+                    Ward.name.ilike(parts[1]),
+                ).first() if constituency else None
+                if constituency is None or ward is None:
+                    msg = "That ward was not found in the selected constituency. No changes made."
+                else:
+                    farmer.sub_county, farmer.ward = constituency.name, ward.name
+                    farmer.constituency_id, farmer.ward_id = constituency.id, ward.id
+                    farmer_repo.update(farmer)
+                    msg = f"Location updated: {constituency.name}, {ward.name}."
         elif action == "add_crop":
             crop = db.query(Crop).filter(Crop.name.ilike(new_value)).first()
             if crop:
-                fc = FarmerCrop(farmer_id=farmer.id, crop_id=crop.id, farm_size=1.0, soil_type="Not specified", experience_level="Beginner")
-                db.add(fc)
-                db.commit()
-                msg = f"Crop {crop.name} added to your profile."
+                exists = db.query(FarmerCrop).filter_by(farmer_id=farmer.id, crop_id=crop.id).first()
+                if exists:
+                    msg = f"{crop.name} is already on your profile."
+                else:
+                    fc = FarmerCrop(
+                        farmer_id=farmer.id,
+                        crop_id=crop.id,
+                        farm_size=float(data["farm_size"]),
+                        soil_type=data["soil_type"],
+                        experience_level=data["experience_level"],
+                    )
+                    db.add(fc)
+                    db.commit()
+                    msg = f"{crop.name} added to your profile ({fc.farm_size:g} acres)."
             else:
                 msg = f"Crop '{new_value}' not found in our database."
         elif action == "add_livestock":
             ls = db.query(Livestock).filter(Livestock.name.ilike(new_value)).first()
             if ls:
-                fl = FarmerLivestock(farmer_id=farmer.id, livestock_id=ls.id, herd_size=1)
-                db.add(fl)
-                db.commit()
-                msg = f"Livestock {ls.name} added to your profile."
+                exists = db.query(FarmerLivestock).filter_by(farmer_id=farmer.id, livestock_id=ls.id).first()
+                if exists:
+                    msg = f"{ls.name} is already on your profile."
+                else:
+                    fl = FarmerLivestock(farmer_id=farmer.id, livestock_id=ls.id, herd_size=int(data["herd_size"]))
+                    db.add(fl)
+                    db.commit()
+                    msg = f"{ls.name} added to your profile ({fl.herd_size} animals)."
             else:
                 msg = f"Livestock '{new_value}' not found in our database."
         else:

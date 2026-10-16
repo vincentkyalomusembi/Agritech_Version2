@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_farmer, require_admin
@@ -112,10 +112,10 @@ def update_farmer(
 
     service = ProfileService(db)
 
-    return service.update_profile(
-        current_farmer.id,
-        farmer,
-    )
+    try:
+        return service.update_profile(current_farmer.id, farmer)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.put(

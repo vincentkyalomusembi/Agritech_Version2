@@ -6,7 +6,7 @@ all database tables.
 """
 
 # Example later
-from app.counties.model import County
+from app.counties.model import County, Constituency, Ward
 from app.crops.model import Crop
 from app.livestock.model import Livestock
 from app.farmers.model import Farmer
