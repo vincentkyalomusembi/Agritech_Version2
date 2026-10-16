@@ -32,3 +32,10 @@ class RecommendationResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class RecommendationGenerateRequest(BaseModel):
+    """Answers collected by the frontend for a new farmer recommendation."""
+
+    kind: str = Field(pattern=r"^(crop|livestock)$")
+    answers: dict[str, str | int | float | bool | None] = Field(default_factory=dict)

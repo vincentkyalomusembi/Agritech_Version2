@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.farmers.utils import normalize_phone_number
 
@@ -97,10 +97,20 @@ class FarmerUpdate(BaseModel):
     )
 
     county_id: UUID | None = None
+    constituency_id: UUID | None = None
+    ward_id: UUID | None = None
     latitude: float | None = Field(default=None, ge=-4.7, le=5.1)
     longitude: float | None = Field(default=None, ge=33.9, le=41.9)
     sub_county: str | None = Field(default=None, max_length=100)
     ward: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_coordinate_pair(self):
+        latitude_set = "latitude" in self.model_fields_set
+        longitude_set = "longitude" in self.model_fields_set
+        if latitude_set != longitude_set:
+            raise ValueError("Set latitude and longitude together from the map, or clear both.")
+        return self
 
 
 class ChangePinRequest(BaseModel):
@@ -140,6 +150,8 @@ class FarmerResponse(BaseModel):
     national_id: str
     phone_number: str
     county_id: UUID
+    constituency_id: UUID | None = None
+    ward_id: UUID | None = None
     latitude: float | None = None
     longitude: float | None = None
     sub_county: str | None = None

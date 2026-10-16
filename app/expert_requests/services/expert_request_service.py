@@ -70,10 +70,12 @@ class ExpertRequestService:
         score = 8.0 * response_rate + min(idle_days / 10, 3.0) - 4.0 * active
         if expert.county_id == farmer.county_id:
             score += 5.0
-        if all(value is not None for value in (farmer.latitude, farmer.longitude, expert.latitude, expert.longitude)):
-            dlat = radians(expert.latitude - farmer.latitude)
-            dlon = radians(expert.longitude - farmer.longitude)
-            a = sin(dlat / 2) ** 2 + cos(radians(farmer.latitude)) * cos(radians(expert.latitude)) * sin(dlon / 2) ** 2
+        from app.farmers.location import farmer_coordinates
+        farmer_latitude, farmer_longitude, _ = farmer_coordinates(farmer)
+        if all(value is not None for value in (farmer_latitude, farmer_longitude, expert.latitude, expert.longitude)):
+            dlat = radians(expert.latitude - farmer_latitude)
+            dlon = radians(expert.longitude - farmer_longitude)
+            a = sin(dlat / 2) ** 2 + cos(radians(farmer_latitude)) * cos(radians(expert.latitude)) * sin(dlon / 2) ** 2
             distance = 6371 * 2 * atan2(sqrt(a), sqrt(1 - a))
             score += max(-10.0, 10.0 - distance / 20.0)
         return score

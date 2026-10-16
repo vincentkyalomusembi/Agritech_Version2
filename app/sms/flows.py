@@ -94,8 +94,8 @@ EXPERT_FLOW = [
 PROFILE_FLOW = [
     {
         "key": "action",
-        "question": "Hi {name}, what would you like to update?\n1. Name\n2. County\n3. Add Crop\n4. Add Livestock\n5. View Profile\n6. Sub-county and ward\n7. Exact coordinates",
-        "choices": {"1": "name", "2": "county", "3": "add_crop", "4": "add_livestock", "5": "view", "6": "sub_county_ward", "7": "coordinates"},
+        "question": "Hi {name}, choose a profile option:\n1. Change name\n2. Change county\n3. Add crop\n4. Add livestock\n5. View profile\n6. Choose constituency/sub-county and ward",
+        "choices": {"1": "name", "2": "county", "3": "add_crop", "4": "add_livestock", "5": "view", "6": "sub_county_ward"},
     },
     # Step 1 branches — handled dynamically in the SMS handler
     {
@@ -103,6 +103,10 @@ PROFILE_FLOW = [
         "question": "",  # set dynamically based on action
         "choices": None,
     },
+    {"key": "farm_size", "question": "How many acres do you grow this crop on? Enter a number, for example 2.", "choices": None, "condition_action": "add_crop"},
+    {"key": "soil_type", "question": "What is the soil type?\n1. Loam\n2. Clay\n3. Sandy\n4. Not sure", "choices": {"1": "Loam", "2": "Clay", "3": "Sandy", "4": "Not sure"}, "condition_action": "add_crop"},
+    {"key": "experience_level", "question": "Your experience with this crop?\n1. Beginner\n2. Intermediate\n3. Experienced", "choices": {"1": "Beginner", "2": "Intermediate", "3": "Experienced"}, "condition_action": "add_crop"},
+    {"key": "herd_size", "question": "How many animals do you have? Enter a whole number.", "choices": None, "condition_action": "add_livestock"},
 ]
 
 SUBSCRIPTION_FLOW = [
