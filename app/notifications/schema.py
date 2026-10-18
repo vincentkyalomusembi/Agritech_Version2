@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from app.notifications.model import NotificationType
 
@@ -27,6 +27,12 @@ class NotificationResponse(BaseModel):
     sent_at: datetime | None
     delivery_status: str
     created_at: datetime
+    read_at: datetime | None = None
+
+    @computed_field
+    @property
+    def read(self) -> bool:
+        return self.read_at is not None
 
     model_config = {
         "from_attributes": True,
@@ -40,3 +46,12 @@ class NotificationListResponse(BaseModel):
     total: int
     limit: int | None = None
     offset: int = 0
+    unread_count: int = 0
+
+
+class UnreadCountResponse(BaseModel):
+    unread_count: int
+
+
+class MarkAllReadResponse(BaseModel):
+    updated: int

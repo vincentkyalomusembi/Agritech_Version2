@@ -3,6 +3,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     String,
     Text,
     DateTime,
@@ -95,6 +96,9 @@ class ExpertRequest(Base):
 
     request_code: Mapped[str] = mapped_column(String(12), unique=True, nullable=False, default=lambda: f"ER-{uuid.uuid4().hex[:8].upper()}")
     farmer_resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Structured web inputs; also the source of outbreak signals.
+    symptom_codes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    urgency: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), unique=True, nullable=True)
 
 

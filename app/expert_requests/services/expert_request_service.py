@@ -2,11 +2,11 @@ from datetime import datetime, timedelta, timezone
 from math import atan2, cos, radians, sin, sqrt
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import app.models  # noqa: F401
 from app.core.africas_talking import AfricasTalkingClient
-from app.expert_requests.exceptions import ALLOWED_STATUS_TRANSITIONS, ExpertRequestNotFoundError, FarmerNotFoundError, InvalidStatusTransitionError
+from app.expert_requests.exceptions import ALLOWED_STATUS_TRANSITIONS, ExpertRequestError, ExpertRequestNotFoundError, FarmerNotFoundError, InvalidStatusTransitionError
 from app.expert_requests.model import ExpertOffer, ExpertRequest, RequestStatus
 from app.expert_requests.repository import ExpertRequestRepository
 from app.expert_requests.schema import ExpertRequestCreate, ExpertRequestResponse, ExpertRequestStatusUpdate
@@ -39,6 +39,8 @@ class ExpertRequestService:
             issue_type=data.issue_type,
             description=data.description,
             preferred_visit_date=data.preferred_visit_date,
+            symptom_codes=data.symptom_codes or None,
+            urgency=data.urgency,
             status=RequestStatus.UNASSIGNED,
             source_session_id=source_session_id,
         )
@@ -171,12 +173,67 @@ class ExpertRequestService:
         request = self.db.query(ExpertRequest).filter_by(request_code=parts[1], farmer_id=farmer.id).with_for_update().first()
         if request is None or request.status != RequestStatus.COMPLETED:
             return False
-        request.farmer_resolution = parts[0].lower()
-        if parts[0] == "UNSOLVED":
+        self._record_resolution(request, farmer, solved=parts[0] == "SOLVED")
+        return True
+
+    def _record_resolution(self, request: ExpertRequest, farmer, solved: bool) -> None:
+        request.farmer_resolution = "solved" if solved else "unsolved"
+        if not solved:
             request.status = RequestStatus.ESCALATED
         self.db.commit()
-        self.sms.send_sms(farmer.phone_number, "Thanks for the feedback. Our support team will follow up." if parts[0] == "UNSOLVED" else "Thanks for confirming the issue was solved.")
-        return True
+        self.sms.send_sms(farmer.phone_number, "Thanks for confirming the issue was solved." if solved else "Thanks for the feedback. Our support team will follow up.")
+
+    # ── Farmer-owned web operations ───────────────────────────────────
+
+    OPEN_STATUSES = (RequestStatus.PENDING, RequestStatus.OFFERED, RequestStatus.UNASSIGNED,
+                     RequestStatus.ESCALATED, RequestStatus.ACCEPTED)
+
+    def list_for_farmer(self, farmer_id: UUID, status: RequestStatus | None = None,
+                        open_only: bool = False, limit: int = 20, offset: int = 0) -> tuple[list[ExpertRequest], int]:
+        query = self.db.query(ExpertRequest).filter(ExpertRequest.farmer_id == farmer_id)
+        if status is not None:
+            query = query.filter(ExpertRequest.status == status)
+        elif open_only:
+            query = query.filter(ExpertRequest.status.in_(self.OPEN_STATUSES))
+        total = query.count()
+        rows = (
+            query.options(joinedload(ExpertRequest.expert))
+            .order_by(ExpertRequest.created_at.desc())
+            .limit(limit).offset(offset).all()
+        )
+        return rows, total
+
+    def get_for_farmer(self, request_id: UUID, farmer_id: UUID, for_update: bool = False) -> ExpertRequest:
+        query = self.db.query(ExpertRequest).filter_by(id=request_id, farmer_id=farmer_id)
+        request = (query.with_for_update() if for_update else query.options(joinedload(ExpertRequest.expert))).first()
+        if request is None:
+            raise ExpertRequestNotFoundError()
+        return request
+
+    def cancel_for_farmer(self, request_id: UUID, farmer) -> ExpertRequest:
+        request = self.get_for_farmer(request_id, farmer.id, for_update=True)
+        if RequestStatus.CANCELLED not in ALLOWED_STATUS_TRANSITIONS.get(request.status, set()):
+            raise InvalidStatusTransitionError(request.status, RequestStatus.CANCELLED)
+        previous = request.status
+        notified_expert = request.expert if previous in {RequestStatus.OFFERED, RequestStatus.ACCEPTED} else None
+        self.db.query(ExpertOffer).filter_by(request_id=request.id, status="offered").update(
+            {"status": "cancelled", "responded_at": datetime.now(timezone.utc)}, synchronize_session=False
+        )
+        request.status = RequestStatus.CANCELLED
+        self.db.commit()
+        if notified_expert is not None:
+            self.sms.send_sms(notified_expert.phone_number, f"Request {request.request_code} was cancelled by the farmer. No action is needed.")
+        self.sms.send_sms(farmer.phone_number, f"Your expert request {request.request_code} has been cancelled.")
+        self.db.refresh(request)
+        return request
+
+    def feedback_for_farmer(self, request_id: UUID, farmer, solved: bool) -> ExpertRequest:
+        request = self.get_for_farmer(request_id, farmer.id, for_update=True)
+        if request.status != RequestStatus.COMPLETED or request.farmer_resolution is not None:
+            raise ExpertRequestError("Feedback can be given once, after the request is completed.")
+        self._record_resolution(request, farmer, solved)
+        self.db.refresh(request)
+        return request
 
     def _complete_request(self, request: ExpertRequest) -> None:
         request.status = RequestStatus.COMPLETED

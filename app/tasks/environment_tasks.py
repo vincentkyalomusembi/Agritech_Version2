@@ -38,6 +38,7 @@ def refresh_environmental_cache() -> dict:
                     "longitude": longitude,
                     "rainfall_mm": rainfall.get("rainfall_mm"),
                     "rainfall_status": rainfall.get("rainfall_status"),
+                    "rainfall_normal_mm": rainfall.get("normal_mm"),
                     "ndvi": environment.get("ndvi"),
                     "ndvi_trend": environment.get("ndvi_trend"),
                 }

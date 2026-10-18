@@ -35,6 +35,8 @@ class FarmerCreate(BaseModel):
     )
 
     county_id: UUID
+    constituency_id: UUID | None = None
+    ward_id: UUID | None = None
     latitude: float | None = Field(default=None, ge=-4.7, le=5.1)
     longitude: float | None = Field(default=None, ge=33.9, le=41.9)
     sub_county: str | None = Field(default=None, max_length=100)

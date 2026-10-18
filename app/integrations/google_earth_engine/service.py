@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from app.integrations.google_earth_engine.ndvi import NDVIService
 from app.integrations.google_earth_engine.chirps import CHIRPSService
 
@@ -20,20 +22,15 @@ class EarthEngineService:
         Retrieve environmental data for a farm.
         """
 
-        ndvi = self.ndvi_service.get_ndvi(
-            latitude=latitude,
-            longitude=longitude,
-        )
+        # Each lookup is an independent blocking GEE request, so run them
+        # concurrently rather than paying three round trips back to back.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            ndvi = pool.submit(self.ndvi_service.get_ndvi, latitude=latitude, longitude=longitude)
+            rainfall = pool.submit(self.chirps_service.get_rainfall, latitude=latitude, longitude=longitude)
+            ndvi_trend = pool.submit(self.ndvi_service.get_ndvi_trend, latitude, longitude)
 
-        rainfall = self.chirps_service.get_rainfall(
-            latitude=latitude,
-            longitude=longitude,
-        )
-
-        ndvi_trend = self.ndvi_service.get_ndvi_trend(latitude, longitude)
-
-        return {
-            "ndvi": ndvi,
-            "rainfall": rainfall,
-            "ndvi_trend": ndvi_trend,
-        }
+            return {
+                "ndvi": ndvi.result(),
+                "rainfall": rainfall.result(),
+                "ndvi_trend": ndvi_trend.result(),
+            }

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    OPENAI_MODEL: str = "gpt-5.6-luna"
     OPENWEATHER_API_KEY: str = ""
 
     AFRICAS_TALKING_USERNAME: str = ""

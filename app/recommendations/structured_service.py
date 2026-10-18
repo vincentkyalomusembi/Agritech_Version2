@@ -1,9 +1,9 @@
 import json
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.ai.gemini_service import GeminiService
+from app.ai.llm import LLMRouter
 from app.catalogue.model import CropVariety, LivestockBreed
 from app.catalogue.model import VendorProduct
 from app.farmers.repository import FarmerRepository
@@ -30,7 +30,8 @@ class StructuredRecommendationService:
 
         livestock = kind == "livestock"
         model = LivestockBreed if livestock else CropVariety
-        rows = self.db.query(model).order_by(model.name.asc()).all()
+        parent = model.livestock if livestock else model.crop
+        rows = self.db.query(model).options(joinedload(parent)).order_by(model.name.asc()).all()
         candidates = []
         for row in rows:
             item = {
@@ -70,10 +71,10 @@ class StructuredRecommendationService:
             "vendor_stock_is_not_ai_input": True,
         }
         try:
-            provider_client = self.ai or GeminiService()
+            provider_client = self.ai or LLMRouter()
             selection = provider_client.generate_structured_recommendation(context)
             result = self._validate_selection(selection, candidates, eligible_primary_ids)
-            provider = "gemini"
+            provider = getattr(provider_client, "last_provider", None) or "gemini"
         except Exception:
             result = self._fallback(candidates, farmer.county.name, weather, environment, eligible_primary_ids)
             provider = "catalogue_fallback"

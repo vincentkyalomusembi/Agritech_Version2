@@ -6,7 +6,6 @@ from app.farmers.repository import FarmerRepository
 from app.farmers.location import farmer_coordinates
 from app.farmer_crops.repository import FarmerCropRepository
 from app.farmer_livestocks.repository import FarmerLivestockRepository
-from app.integrations.google_earth_engine.service import EarthEngineService
 from app.integrations.google_earth_engine.cache_service import EnvironmentalCacheService
 from app.integrations.openweather.client import OpenWeatherClient
 from app.market_prices.repository import MarketPriceRepository
@@ -29,8 +28,7 @@ class RecommendationContextService:
         self.market_repository = MarketPriceRepository(db)
 
         self.weather = OpenWeatherClient()
-        self.environment = EarthEngineService()
-        self.environment_cache = EnvironmentalCacheService(db, self.environment)
+        self.environment_cache = EnvironmentalCacheService(db)
 
     def build_context(self, farmer_id: UUID) -> dict:
         """
@@ -112,7 +110,7 @@ class RecommendationContextService:
         environment = self.environment_cache.get_for_farmer(farmer)
         if environment is None:
             try:
-                environment = self.environment.get_environment(latitude, longitude)
+                environment = self.environment_cache.get_live(farmer, latitude, longitude)
             except Exception as exc:
                 print(f"GEE environment unavailable: {exc}")
                 environment = {"ndvi": None, "rainfall": None}
@@ -174,7 +172,7 @@ class RecommendationContextService:
         observations = self.environment_cache.get_for_farmer(farmer)
         if observations is None:
             try:
-                observations = self.environment.get_environment(latitude, longitude)
+                observations = self.environment_cache.get_live(farmer, latitude, longitude)
             except Exception:
                 observations = None
         return {"latitude": latitude, "longitude": longitude, "location_source": location_source,

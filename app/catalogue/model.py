@@ -1,7 +1,10 @@
 import uuid
 
 from sqlalchemy import (
+    JSON,
+    Boolean,
     CheckConstraint,
+    Index,
     Date,
     DateTime,
     Float,
@@ -79,6 +82,11 @@ class Vendor(Base):
     contact_phone: Mapped[str | None] = mapped_column(String(40))
     contact_email: Mapped[str | None] = mapped_column(String(254))
     opening_hours: Mapped[str | None] = mapped_column(Text)
+    whatsapp_phone: Mapped[str | None] = mapped_column(String(20))
+    certified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Paid placement: listed first and always labelled as sponsored to farmers.
+    sponsored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    categories: Mapped[list | None] = mapped_column(JSON)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     source_checked_on: Mapped[Date | None] = mapped_column(Date)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -99,6 +107,7 @@ class VendorProduct(Base):
     crop_variety_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("crop_varieties.id", ondelete="SET NULL"), index=True)
     livestock_breed_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("livestock_breeds.id", ondelete="SET NULL"), index=True)
     product_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(30))
     price_kes: Mapped[float | None] = mapped_column(Numeric(12, 2))
     unit: Mapped[str] = mapped_column(String(60), nullable=False)
     stock_quantity: Mapped[float | None] = mapped_column(Float)
@@ -110,6 +119,19 @@ class VendorProduct(Base):
     vendor = relationship("Vendor", back_populates="products")
     crop_variety = relationship("CropVariety")
     livestock_breed = relationship("LivestockBreed")
+
+
+class VendorEvent(Base):
+    """A farmer viewing or contacting a vendor; the basis for listing reports."""
+
+    __tablename__ = "vendor_events"
+    __table_args__ = (Index("ix_vendor_events_vendor_type", "vendor_id", "event_type"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="CASCADE"), nullable=False)
+    farmer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("farmers.id", ondelete="SET NULL"))
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Market(Base):

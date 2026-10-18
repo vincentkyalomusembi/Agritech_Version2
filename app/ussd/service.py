@@ -4,10 +4,14 @@ USSD service — handles the full navigation tree:
   Screen 1.x: Registration flow
   Screen 2.x: Login → Main Menu → Service launch
 """
+import hashlib
+import hmac
+
 from sqlalchemy.orm import Session
 
 from app.auth.security import hash_pin, verify_pin
 from app.core.africas_talking import AfricasTalkingClient
+from app.core.config import settings
 from app.core.rate_limit import check_rate_limit
 from app.core.redis_client import get_redis
 from app.counties.repository import CountyRepository
@@ -131,7 +135,7 @@ class USSDService:
         if farmer is None:
             return menu.NOT_REGISTERED
 
-        if not verify_pin(pin, farmer.pin_hash):
+        if not self._verify_session_pin(cb_id, phone, pin, farmer.pin_hash):
             return menu.LOGIN_FAILED
 
         if not getattr(farmer, "profile_complete", True):
@@ -156,6 +160,39 @@ class USSDService:
         # MVP: subscription enforcement is temporarily disabled. Keep all
         # farmer services available while subscription pricing is finalized.
         return self._launch_service(farmer, service_key, cb_id, text)
+
+    PIN_SESSION_TTL_SECONDS = 300
+
+    def _verify_session_pin(self, cb_id: str | None, phone: str, pin: str, pin_hash: str) -> bool:
+        """
+        USSD resends the PIN on every screen after login. Remember a successful
+        bcrypt check for this provider session so later screens skip it. The
+        marker is an HMAC bound to the stored hash, so it reveals nothing about
+        the PIN and stops matching once the PIN changes.
+        """
+        if not cb_id or not settings.SECRET_KEY:
+            return verify_pin(pin, pin_hash)
+
+        key = f"ussd:auth:{cb_id}"
+        marker = hmac.new(
+            settings.SECRET_KEY.encode(),
+            f"{phone}:{pin}:{pin_hash}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        try:
+            cached = self.redis.get(key)
+        except Exception:
+            cached = None
+        if cached is not None and hmac.compare_digest(str(cached), marker):
+            return True
+
+        if not verify_pin(pin, pin_hash):
+            return False
+        try:
+            self.redis.set(key, marker, ex=self.PIN_SESSION_TTL_SECONDS)
+        except Exception:
+            pass
+        return True
 
     # ── Service launcher ──────────────────────────────────────────────
 

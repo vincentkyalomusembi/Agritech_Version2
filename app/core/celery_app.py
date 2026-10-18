@@ -23,6 +23,7 @@ celery_app = Celery(
     backend=celery_redis_url,
     include=[
         "app.tasks.recommendation_tasks",
+        "app.tasks.recommendation_job_tasks",
         "app.tasks.session_tasks",
         "app.tasks.notification_tasks",
         "app.tasks.mpesa_tasks",

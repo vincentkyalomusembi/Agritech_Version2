@@ -144,4 +144,30 @@ class NotificationService:
             total=total,
             limit=effective_limit,
             offset=offset,
+            unread_count=self.unread_count(farmer_id),
         )
+
+    # ── Read state (web inbox; SMS delivery is tracked separately) ────
+
+    def unread_count(self, farmer_id: UUID) -> int:
+        return self.repository.db.query(Notification).filter(
+            Notification.farmer_id == farmer_id, Notification.read_at.is_(None)
+        ).count()
+
+    def mark_read(self, notification_id: UUID, farmer_id: UUID) -> Notification | None:
+        """Idempotent: the first read time is kept."""
+        notification = self.repository.db.query(Notification).filter_by(id=notification_id, farmer_id=farmer_id).first()
+        if notification is None:
+            return None
+        if notification.read_at is None:
+            notification.read_at = datetime.now(timezone.utc)
+            self.repository.db.commit()
+            self.repository.db.refresh(notification)
+        return notification
+
+    def mark_all_read(self, farmer_id: UUID) -> int:
+        updated = self.repository.db.query(Notification).filter(
+            Notification.farmer_id == farmer_id, Notification.read_at.is_(None)
+        ).update({"read_at": datetime.now(timezone.utc)}, synchronize_session=False)
+        self.repository.db.commit()
+        return updated
