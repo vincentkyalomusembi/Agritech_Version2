@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 import app.models  # noqa: F401 - register all SQLAlchemy mappers
 from app.farmers.model import Farmer
@@ -63,6 +63,7 @@ class FarmerRepository:
 
         return (
             self.db.query(Farmer)
+            .options(selectinload(Farmer.crops), selectinload(Farmer.livestock))
             .all()
         )
 

@@ -113,6 +113,20 @@ class Farmer(Base):
         back_populates="farmer",
     )
 
+    @property
+    def missing_profile_items(self) -> list[str]:
+        """Web profile steps still open: a farm pin plus at least one crop or animal."""
+        missing = []
+        if self.latitude is None or self.longitude is None:
+            missing.append("location")
+        if not self.crops and not self.livestock:
+            missing.append("crops_or_livestock")
+        return missing
+
+    @property
+    def setup_complete(self) -> bool:
+        return not self.missing_profile_items
+
     recommendations = relationship(
         "Recommendation",
         back_populates="farmer",

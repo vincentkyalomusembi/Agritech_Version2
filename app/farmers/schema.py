@@ -159,6 +159,8 @@ class FarmerResponse(BaseModel):
     sub_county: str | None = None
     ward: str | None = None
     is_active: bool
+    setup_complete: bool = False
+    missing_profile_items: list[str] = []
 
     model_config = {
         "from_attributes": True
