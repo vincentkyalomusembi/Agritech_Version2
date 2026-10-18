@@ -1,5 +1,9 @@
-from fastapi import FastAPI
+import logging
+import time
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 import app.models
 
 # Auth & Farmers
@@ -30,6 +34,12 @@ from app.staff.routes import router as staff_router
 from app.admin.routes import router as admin_router
 from app.pricing.routes import router as pricing_router
 from app.recommendations.routes import router as recommendations_router
+from app.weather.routes import router as weather_router
+from app.crops.routes import router as crops_router
+from app.livestock.routes import router as livestock_router
+from app.vendors.routes import router as vendors_router
+from app.vendors.admin_routes import router as admin_vendors_router
+from app.disease_alerts.routes import router as outbreaks_router
 from app.core.config import settings
 
 # Exception Handlers
@@ -59,6 +69,12 @@ app.include_router(staff_router)
 app.include_router(admin_router)
 app.include_router(pricing_router)
 app.include_router(recommendations_router)
+app.include_router(weather_router)
+app.include_router(crops_router)
+app.include_router(livestock_router)
+app.include_router(vendors_router)
+app.include_router(admin_vendors_router)
+app.include_router(outbreaks_router)
 
 _origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
 if _origins:
@@ -71,7 +87,25 @@ if _origins:
         max_age=600,
     )
 
+# Location and catalogue lists are large JSON payloads; compress them.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 register_exception_handlers(app)
+
+logger = logging.getLogger("app.timing")
+SLOW_REQUEST_SECONDS = 1.0
+
+
+@app.middleware("http")
+async def time_requests(request: Request, call_next):
+    """Expose per-request latency and log slow endpoints for tuning."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - started
+    response.headers["X-Process-Time"] = f"{elapsed:.3f}"
+    if elapsed >= SLOW_REQUEST_SECONDS:
+        logger.warning("Slow request %s %s took %.2fs", request.method, request.url.path, elapsed)
+    return response
 
 
 @app.on_event("startup")
@@ -89,6 +123,21 @@ def bootstrap_staff_admin() -> None:
         )
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def warm_earth_engine() -> None:
+    """Pay the slow GEE handshake at boot, off the request path."""
+    import threading
+
+    def _warm():
+        try:
+            from app.integrations.google_earth_engine.client import EarthEngineClient
+            EarthEngineClient()
+        except Exception as exc:
+            logger.warning("Earth Engine warm-up skipped: %s", exc)
+
+    threading.Thread(target=_warm, daemon=True).start()
 
 
 @app.get("/", tags=["Health"])

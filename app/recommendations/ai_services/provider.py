@@ -1,6 +1,14 @@
 from abc import ABC, abstractmethod
+from functools import lru_cache
 
 from app.core.config import settings
+
+
+@lru_cache(maxsize=1)
+def _openai_client():
+    from openai import OpenAI
+
+    return OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 class AIProvider(ABC):
@@ -32,11 +40,9 @@ class GeminiProvider(AIProvider):
         if not settings.GEMINI_API_KEY:
             raise RuntimeError("Gemini API key is not configured.")
 
-        from google import genai
+        from app.ai.gemini_service import _gemini_client
 
-        self.client = genai.Client(
-            api_key=settings.GEMINI_API_KEY
-        )
+        self.client = _gemini_client()
 
     def generate_recommendation(
         self,
@@ -69,11 +75,7 @@ class OpenAIProvider(AIProvider):
         if not settings.OPENAI_API_KEY:
             raise RuntimeError("OpenAI API key is not configured.")
 
-        from openai import OpenAI
-
-        self.client = OpenAI(
-            api_key=settings.OPENAI_API_KEY
-        )
+        self.client = _openai_client()
 
     def generate_recommendation(
         self,
@@ -87,7 +89,7 @@ class OpenAIProvider(AIProvider):
         )
 
         response = self.client.responses.create(
-            model="gpt-5.6-luna",
+            model=settings.OPENAI_MODEL,
             input=prompt,
         )
 

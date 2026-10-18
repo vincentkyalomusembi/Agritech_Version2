@@ -1,8 +1,31 @@
+from functools import lru_cache
+
 from google import genai
 
 from app.ai.prompts import LEGACY_SYSTEM_PROMPT, SYSTEM_PROMPT
 from app.core.config import settings
 import json
+
+
+def build_text_prompt(context: dict) -> str:
+    """Bounded advice prompt shared by every text provider."""
+    return f"""
+{LEGACY_SYSTEM_PROMPT}
+
+Farmer Data
+
+{context}
+
+Return at most six short bullet points covering crop varieties, livestock,
+disease risks, fertilizer/feed, farming action, and market opportunity. Omit
+categories not supported by the supplied data.
+"""
+
+
+@lru_cache(maxsize=1)
+def _gemini_client() -> genai.Client:
+    # One SDK client per process keeps its HTTP connections warm.
+    return genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
 class GeminiService:
@@ -17,9 +40,7 @@ class GeminiService:
         # ---- End Improvement ----
         if not settings.GEMINI_API_KEY:
             raise RuntimeError("Gemini API is not configured.")
-        self.client = genai.Client(
-            api_key=settings.GEMINI_API_KEY
-        )
+        self.client = _gemini_client()
 
     def generate_recommendation(
         self,
@@ -33,17 +54,7 @@ class GeminiService:
         # Ask for a bounded, structured answer and trim overlong provider text
         # so USSD/SMS follow-up messages remain concise and predictable.
         # ---- End Improvement ----
-        prompt = f"""
-{LEGACY_SYSTEM_PROMPT}
-
-Farmer Data
-
-{context}
-
-Return at most six short bullet points covering crop varieties, livestock,
-disease risks, fertilizer/feed, farming action, and market opportunity. Omit
-categories not supported by the supplied data.
-"""
+        prompt = build_text_prompt(context)
 
         response = self.client.models.generate_content(
             model="gemini-2.5-flash",

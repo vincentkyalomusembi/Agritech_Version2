@@ -50,7 +50,10 @@ def register_farmer(
 
     service = RegistrationService(db)
 
-    return service.register(farmer)
+    try:
+        return service.register(farmer)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.post(

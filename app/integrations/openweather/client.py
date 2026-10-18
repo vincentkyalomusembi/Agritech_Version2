@@ -1,8 +1,14 @@
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
 import httpx
 
+from app.core.cache import get_json, set_json
 from app.core.config import settings
+
+# Weather changes slowly; neighbouring farms (~1 km grid) share a cached
+# summary instead of each request making two OpenWeather calls.
+WEATHER_CACHE_TTL_SECONDS = 30 * 60
 
 
 class OpenWeatherClient:
@@ -73,7 +79,7 @@ class OpenWeatherClient:
         # Summarise forecast points before they reach the LLM to reduce token
         # usage and preserve only forecast signals relevant to farm decisions.
         # ---- End Improvement ----
-        entries = self._get(self.FORECAST_URL, latitude, longitude).get("list", [])
+        entries = self._forecast_entries(latitude, longitude)
         if not entries:
             return {"periods": []}
         periods = [
@@ -89,6 +95,36 @@ class OpenWeatherClient:
         return {"periods": periods}
   
 
+    def _forecast_entries(self, latitude: float, longitude: float) -> list[dict]:
+        """Raw 3-hourly, 5-day forecast, cached so summary and daily views share one call."""
+        key = f"weather:forecast:{round(latitude, 2)}:{round(longitude, 2)}"
+        cached = get_json(key)
+        if cached is not None:
+            return cached
+        entries = self._get(self.FORECAST_URL, latitude, longitude).get("list", [])
+        set_json(key, entries, WEATHER_CACHE_TTL_SECONDS)
+        return entries
+
+    def get_daily_forecast(self, latitude: float, longitude: float, days: int = 5) -> list[dict]:
+        """Group the 3-hourly forecast into per-day high/low, rain and dominant condition."""
+        by_day: dict[str, list[dict]] = {}
+        for item in self._forecast_entries(latitude, longitude):
+            day = (item.get("dt_txt") or "")[:10]
+            if day:
+                by_day.setdefault(day, []).append(item)
+        daily = []
+        for day, items in list(by_day.items())[:days]:
+            conditions = [(entry.get("weather") or [{}])[0].get("main") for entry in items]
+            conditions = [value for value in conditions if value]
+            daily.append({
+                "date": day,
+                "condition": max(set(conditions), key=conditions.count) if conditions else None,
+                "high_c": max(entry.get("main", {}).get("temp_max", entry.get("main", {}).get("temp")) for entry in items),
+                "low_c": min(entry.get("main", {}).get("temp_min", entry.get("main", {}).get("temp")) for entry in items),
+                "rainfall_mm": round(sum(entry.get("rain", {}).get("3h", 0.0) for entry in items), 1),
+            })
+        return daily
+
     def get_weather_summary(
         self,
         latitude: float,
@@ -96,10 +132,20 @@ class OpenWeatherClient:
     ) -> dict:
         """Return current conditions plus the next 24 hours of forecast."""
 
-        return {
-            "current": self.get_current_weather(latitude, longitude),
-            "forecast": self.get_forecast(latitude, longitude),
-        }
+        key = f"weather:summary:{round(latitude, 2)}:{round(longitude, 2)}"
+        cached = get_json(key)
+        if cached is not None:
+            return cached
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            current = pool.submit(self.get_current_weather, latitude, longitude)
+            forecast = pool.submit(self.get_forecast, latitude, longitude)
+            summary = {
+                "current": current.result(),
+                "forecast": forecast.result(),
+            }
+        set_json(key, summary, WEATHER_CACHE_TTL_SECONDS)
+        return summary
 
 
 # ---- Copilot Improvement ----

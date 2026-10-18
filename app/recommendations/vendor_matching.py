@@ -1,9 +1,9 @@
 from math import atan2, cos, radians, sin, sqrt
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.catalogue.model import VendorProduct
+from app.catalogue.model import Vendor, VendorProduct
 
 
 def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -22,6 +22,7 @@ class VendorMatchingService:
     def match_variety(self, variety_id: UUID, farmer, limit: int = 3) -> list[dict]:
         rows = (
             self.db.query(VendorProduct)
+            .options(joinedload(VendorProduct.vendor).joinedload(Vendor.county))
             .filter(VendorProduct.crop_variety_id == variety_id)
             .all()
         )

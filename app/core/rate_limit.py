@@ -51,8 +51,10 @@ def limit_login_attempts(request: Request) -> None:
         r = get_redis()
         ip = request.client.host if request.client else "unknown"
         key = f"rl:login:{ip}"
-        count = r.incr(key)
-        r.expire(key, 60)
+        pipe = r.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, 60)
+        count = pipe.execute()[0]
         if count > 10:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

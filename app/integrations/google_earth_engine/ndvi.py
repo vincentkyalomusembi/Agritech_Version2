@@ -34,17 +34,23 @@ class NDVIService:
             .sort("system:time_start", False)
         )
 
+    # reduceRegion omits the band key when no pixels are usable; this sentinel
+    # stands in for the missing key so each lookup stays one server round trip.
+    _MISSING = -99999
+
     def _mean_ndvi(self, image, area):
-        result = image.reduceRegion(
+        """Server-side mean NDVI (raw MODIS scale) or the missing sentinel."""
+        return image.reduceRegion(
             reducer=self.ee.Reducer.mean(),
             geometry=area,
             scale=self.SCALE_METERS,
             maxPixels=1e9,
-        )
-        if not result.contains("NDVI").getInfo():
+        ).get("NDVI", self._MISSING)
+
+    def _scaled(self, raw):
+        if raw is None or raw == self._MISSING:
             return None
-        value = result.get("NDVI").getInfo()
-        return value / 10000 if value is not None else None
+        return raw / 10000
 
     def get_ndvi(
         self,
@@ -55,19 +61,27 @@ class NDVIService:
         """Return the latest usable NDVI within 90 days, or an explicit unavailable result."""
         area = self.ee.Geometry.Point([longitude, latitude]).buffer(buffer_meters)
         collection = self._collection(self.LOOKBACK_DAYS)
+        image = self.ee.Image(collection.first())
 
-        if collection.size().getInfo() == 0:
+        info = self.ee.Dictionary(self.ee.Algorithms.If(
+            collection.size().gt(0),
+            self.ee.Dictionary({
+                "raw": self._mean_ndvi(image, area),
+                "date": image.date().format("YYYY-MM-dd"),
+            }),
+            self.ee.Dictionary({"empty": True}),
+        )).getInfo()
+
+        if info.get("empty"):
             return self._unavailable(latitude, longitude, "No MODIS images in the last 90 days.")
 
-        image = collection.first()
-        value = self._mean_ndvi(image, area)
+        value = self._scaled(info.get("raw"))
         if value is None:
             return self._unavailable(latitude, longitude, "No NDVI pixels available for this location.")
 
-        image_date = image.date().format("YYYY-MM-dd").getInfo()
         return {
             "dataset": "MODIS MOD13Q1",
-            "image_date": image_date,
+            "image_date": info["date"],
             "ndvi": round(value, 2),
             "vegetation_health": self.classify_ndvi(value),
             "location": {"latitude": latitude, "longitude": longitude},
@@ -84,20 +98,31 @@ class NDVIService:
         """Compare the two newest available MODIS observations within the lookback window."""
         area = self.ee.Geometry.Point([longitude, latitude]).buffer(buffer_meters)
         collection = self._collection(max(self.LOOKBACK_DAYS, period_days * 3))
-        size = collection.size().getInfo()
-        if size < 2:
-            return self._unavailable_trend("Fewer than two MODIS observations are available.")
-
         images = collection.toList(2)
         recent_image = self.ee.Image(images.get(0))
         previous_image = self.ee.Image(images.get(1))
-        recent = self._mean_ndvi(recent_image, area)
-        previous = self._mean_ndvi(previous_image, area)
+
+        info = self.ee.Dictionary(self.ee.Algorithms.If(
+            collection.size().gte(2),
+            self.ee.Dictionary({
+                "recent": self._mean_ndvi(recent_image, area),
+                "previous": self._mean_ndvi(previous_image, area),
+                "recent_date": recent_image.date().format("YYYY-MM-dd"),
+                "previous_date": previous_image.date().format("YYYY-MM-dd"),
+            }),
+            self.ee.Dictionary({"empty": True}),
+        )).getInfo()
+
+        if info.get("empty"):
+            return self._unavailable_trend("Fewer than two MODIS observations are available.")
+
+        recent = self._scaled(info.get("recent"))
+        previous = self._scaled(info.get("previous"))
         if recent is None or previous is None:
             return self._unavailable_trend("NDVI pixels are unavailable for one or both observations.")
 
-        recent_date = recent_image.date().format("YYYY-MM-dd").getInfo()
-        previous_date = previous_image.date().format("YYYY-MM-dd").getInfo()
+        recent_date = info["recent_date"]
+        previous_date = info["previous_date"]
         delta = recent - previous
         direction = "improving" if delta > 0.03 else "declining" if delta < -0.03 else "stable"
         return {

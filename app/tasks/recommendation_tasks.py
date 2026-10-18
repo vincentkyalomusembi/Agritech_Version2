@@ -102,7 +102,7 @@ def run_weather_alerts(self, session_id: str, farmer_id: str, phone: str):
         from app.farmers.location import farmer_coordinates
         from app.integrations.openweather.client import OpenWeatherClient
         from app.integrations.google_earth_engine.service import EarthEngineService
-        from app.ai.gemini_service import GeminiService
+        from app.ai.llm import LLMRouter
         from app.sms_sessions.model import SMSSession
 
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -116,7 +116,7 @@ def run_weather_alerts(self, session_id: str, farmer_id: str, phone: str):
             observations = EarthEngineService().get_environment(latitude, longitude)
         except Exception:
             logger.exception("GEE observations unavailable for weather alert farmer_id=%s", farmer.id)
-        tip = _safe_fetch(lambda: GeminiService().generate_recommendation({
+        tip = _safe_fetch(lambda: LLMRouter().generate_recommendation({
             "farmer": {"county": farmer.county.name},
             "weather": weather,
             "satellite_observations": observations,
@@ -210,7 +210,7 @@ def run_disease_alert(self, session_id: str, farmer_id: str, phone: str):
         from app.integrations.openweather.client import OpenWeatherClient
         from app.integrations.google_earth_engine.service import EarthEngineService
         from app.integrations.google_earth_engine.cache_service import EnvironmentalCacheService
-        from app.ai.gemini_service import GeminiService
+        from app.ai.llm import LLMRouter
         from app.sms_sessions.model import SMSSession
 
         session = db.query(SMSSession).filter_by(id=session_id).first()
@@ -238,7 +238,7 @@ def run_disease_alert(self, session_id: str, farmer_id: str, phone: str):
             "request": "Assess disease risk and provide action steps.",
         }
 
-        recommendation = _safe_fetch(lambda: GeminiService().generate_recommendation(context))
+        recommendation = _safe_fetch(lambda: LLMRouter().generate_recommendation(context))
         if not recommendation:
             recommendation = "Monitor crops/livestock closely. Contact a local extension officer if symptoms worsen."
 

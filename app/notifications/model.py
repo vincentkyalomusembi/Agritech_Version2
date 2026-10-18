@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 import enum
 
 from sqlalchemy import (
@@ -81,4 +82,9 @@ class Notification(Base):
     delivery_status: Mapped[str] = mapped_column(
         String(30),
         default="Pending",
+    )
+
+    read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )

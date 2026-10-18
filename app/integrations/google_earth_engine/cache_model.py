@@ -22,6 +22,7 @@ class EnvironmentalCache(Base):
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     rainfall_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     rainfall_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    rainfall_normal_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     ndvi: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     ndvi_trend: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     observed_on: Mapped[date] = mapped_column(SQLDate, nullable=False, index=True)

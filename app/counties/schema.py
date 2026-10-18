@@ -30,3 +30,13 @@ class WardResponse(BaseModel):
     constituency_id: UUID
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LocationMatchResponse(BaseModel):
+    """Nearest administrative match for coordinates; approximate by design."""
+
+    county: CountyResponse
+    constituency: ConstituencyResponse
+    wards: list[WardResponse]
+    distance_km: float
+    approximate: bool = True

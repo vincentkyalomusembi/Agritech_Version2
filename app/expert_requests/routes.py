@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.sessions import get_db
@@ -13,8 +15,12 @@ from app.expert_requests.exceptions import (
 )
 from app.expert_requests.schema import (
     ExpertRequestCreate,
+    ExpertRequestFeedback,
     ExpertRequestResponse,
     ExpertRequestStatusUpdate,
+    FarmerExpertRequestPage,
+    FarmerExpertRequestResponse,
+    FarmerRequestExpert,
 )
 from app.expert_requests.services.expert_request_service import (
     ExpertRequestService,
@@ -118,4 +124,74 @@ def update_expert_request_status(
         raise _handle_expert_request_error(exc)
 
     except ExpertUnavailableError as exc:
+        raise _handle_expert_request_error(exc)
+
+
+# ── Farmer-owned request history ─────────────────────────────────────
+
+def _farmer_view(request: ExpertRequest) -> FarmerExpertRequestResponse:
+    """Farmers see the expert's phone only after the expert accepts."""
+    expert = None
+    if request.expert is not None:
+        show_phone = request.status in {RequestStatus.ACCEPTED, RequestStatus.COMPLETED}
+        expert = FarmerRequestExpert(
+            id=request.expert.id,
+            full_name=request.expert.full_name,
+            expert_type=getattr(request.expert.expert_type, "value", request.expert.expert_type),
+            organization=request.expert.organization,
+            phone_number=request.expert.phone_number if show_phone else None,
+        )
+    return FarmerExpertRequestResponse(**ExpertRequestResponse.model_validate(request).model_dump(), expert=expert)
+
+
+@router.get("/farmers/me/expert-requests", response_model=FarmerExpertRequestPage)
+def list_my_expert_requests(
+    status_filter: RequestStatus | None = Query(default=None, alias="status"),
+    open_only: bool = Query(default=False, alias="open"),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_farmer: Farmer = Depends(get_current_farmer),
+    db: Session = Depends(get_db),
+):
+    """The signed-in farmer's requests, newest first. `open=true` counts unfinished ones."""
+    rows, total = ExpertRequestService(db).list_for_farmer(current_farmer.id, status_filter, open_only, limit, offset)
+    return FarmerExpertRequestPage(items=[_farmer_view(row) for row in rows], total=total, limit=limit, offset=offset)
+
+
+@router.get("/farmers/me/expert-requests/{request_id}", response_model=FarmerExpertRequestResponse)
+def get_my_expert_request(
+    request_id: UUID,
+    current_farmer: Farmer = Depends(get_current_farmer),
+    db: Session = Depends(get_db),
+):
+    try:
+        return _farmer_view(ExpertRequestService(db).get_for_farmer(request_id, current_farmer.id))
+    except ExpertRequestError as exc:
+        raise _handle_expert_request_error(exc)
+
+
+@router.post("/farmers/me/expert-requests/{request_id}/cancel", response_model=FarmerExpertRequestResponse)
+def cancel_my_expert_request(
+    request_id: UUID,
+    current_farmer: Farmer = Depends(get_current_farmer),
+    db: Session = Depends(get_db),
+):
+    """Cancel an unfinished request; any offered or assigned expert is told by SMS."""
+    try:
+        return _farmer_view(ExpertRequestService(db).cancel_for_farmer(request_id, current_farmer))
+    except ExpertRequestError as exc:
+        raise _handle_expert_request_error(exc)
+
+
+@router.post("/farmers/me/expert-requests/{request_id}/feedback", response_model=FarmerExpertRequestResponse)
+def give_expert_request_feedback(
+    request_id: UUID,
+    payload: ExpertRequestFeedback,
+    current_farmer: Farmer = Depends(get_current_farmer),
+    db: Session = Depends(get_db),
+):
+    """Same outcome as replying SOLVED/UNSOLVED by SMS; unsolved escalates to support."""
+    try:
+        return _farmer_view(ExpertRequestService(db).feedback_for_farmer(request_id, current_farmer, payload.solved))
+    except ExpertRequestError as exc:
         raise _handle_expert_request_error(exc)
