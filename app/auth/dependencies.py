@@ -5,6 +5,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.auth.model import WebRole, WebUser
 from app.auth.security import decode_access_token
 from app.core.config import settings
 from app.database.sessions import get_db
@@ -35,19 +36,20 @@ def get_current_farmer(
         # Only accept the standard subject claim issued by the current login
         # flow, avoiding ambiguous legacy payloads during authorization.
         # ---- End Improvement ----
-        farmer_id = payload.get("sub")
+        identity_id = UUID(str(payload.get("sub")))
 
-        if farmer_id is None:
+        if identity_id is None:
             raise credentials_exception
 
     except JWTError:
         raise credentials_exception
 
-    farmer = (
-        db.query(Farmer)
-        .filter(Farmer.id == farmer_id)
-        .first()
-    )
+    farmer = db.query(Farmer).filter(Farmer.id == identity_id).first()
+    if farmer is None:
+        identity = db.query(WebUser).filter(WebUser.id == identity_id).first()
+        if identity is None or identity.role != WebRole.FARMER or identity.farmer_id is None:
+            raise credentials_exception
+        farmer = db.query(Farmer).filter(Farmer.id == identity.farmer_id).first()
 
     if farmer is None or not farmer.is_active:
         raise credentials_exception
@@ -55,25 +57,32 @@ def get_current_farmer(
     return farmer
 
 
-def require_admin(
-    current_farmer: Farmer = Depends(get_current_farmer),
-) -> Farmer:
-    """Require a farmer identity explicitly configured as an administrator."""
-
-    configured_ids = {
-        value.strip()
-        for value in settings.ADMIN_FARMER_IDS.split(",")
-        if value.strip()
-    }
+def get_current_web_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> WebUser:
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials.")
     try:
-        is_admin = str(UUID(str(current_farmer.id))) in configured_ids
-    except ValueError:
-        is_admin = False
+        payload = decode_access_token(token)
+        if payload.get("typ", "access") != "access":
+            raise credentials_exception
+        user_id = UUID(str(payload.get("sub")))
+    except (JWTError, ValueError, TypeError):
+        raise credentials_exception
+    user = db.query(WebUser).filter(WebUser.id == user_id, WebUser.is_active.is_(True)).first()
+    if user is None:
+        raise credentials_exception
+    return user
 
-    if not is_admin:
+
+def require_admin(
+    current_user: WebUser = Depends(get_current_web_user),
+) -> WebUser:
+    """Require the shared admin role; ADMIN_FARMER_IDS is not authorization."""
+    if current_user.role != WebRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator access required.",
         )
 
-    return current_farmer
+    return current_user

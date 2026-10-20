@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.farmers.utils import normalize_phone_number
+from app.auth.model import WebRole, WebUser
 from app.staff.model import StaffRole, StaffUser
 from app.staff.repository import StaffRepository
 from app.staff.schema import StaffCreate, StaffResponse, StaffTokenResponse, StaffUpdate
@@ -51,7 +52,20 @@ class StaffService:
             county_id=payload.county_id,
             expert_id=payload.expert_id,
         )
-        return StaffResponse.model_validate(self.repository.create(staff))
+        created = self.repository.create(staff)
+        role = WebRole.ADMIN if payload.role == StaffRole.PLATFORM_ADMIN else WebRole.EXPERT
+        self.db.add(WebUser(
+            id=created.id,
+            role=role,
+            full_name=created.full_name,
+            phone_number=created.phone_number,
+            email=created.email,
+            password_hash=created.password_hash,
+            expert_id=created.expert_id,
+            is_active=created.is_active,
+        ))
+        self.db.flush()
+        return StaffResponse.model_validate(created)
 
     def update(self, staff_id: UUID, payload: StaffUpdate) -> StaffResponse:
         staff = self.repository.get_by_id(staff_id)

@@ -2,7 +2,7 @@
 
 This document is for the **web frontend team**. It describes what this backend actually does today, every HTTP endpoint with request/response schema, how USSD and SMS use the same backend without JWT, why “sessions keep expiring”, and the recommended auth/roles design.
 
-**This is documentation and a design proposal only. No code changes are included here.**
+This documents the current backend contract and the frontend work still blocked by backend identity gaps. Role-based web sign-in is now available; legacy staff authorization remains temporarily while admin and expert route ownership is migrated.
 
 ---
 
@@ -12,15 +12,15 @@ Agritech Version 2 is a FastAPI service for Kenyan farmers. One API process serv
 
 | Channel | How it authenticates | How it keeps state |
 | --- | --- | --- |
-| **Web** | JWT in `Authorization: Bearer <token>` | JWT `exp` claim. Farmers have **no refresh token**. Staff have a short access token plus a refresh token. |
+| **Web** | One role-based JWT in `Authorization: Bearer <token>` | Access + refresh tokens. JWT includes `role`: `farmer`, `expert`, or `admin`. |
 | **USSD** | Africa’s Talking posts the phone number + PIN on every request. No JWT. | Africa’s Talking `sessionId` (network session, typically ~2–3 minutes) plus Redis PIN cache (5 minutes). Choosing a service **ends USSD** and continues on SMS. |
 | **SMS** | Inbound webhook from Africa’s Talking. Identity is the sender phone, matched to a farmer. | `sms_sessions` row. Default TTL **24 hours**. Celery marks stale sessions expired. |
 
-Farmers, experts, and admins are **not** one user table with roles. Today you have:
+The web identity migration adds `web_users` with one role per identity. Existing `farmers`, `experts`, and `staff_users` records are copied into it; `staff_users` remains temporarily so existing admin routes do not break during migration:
 
 - `farmers` — PIN login, web farmer app, USSD, SMS.
-- `experts` — directory of agronomists/vets. **No login endpoint.**
-- `staff_users` — separate login for “platform_admin” and “officer”. Officers may be linked to an `experts` row via `expert_id`.
+- `experts` — expert profiles. Existing experts without a provisioned password cannot sign in yet.
+- `staff_users` — legacy compatibility table. `platform_admin` maps to `admin`; officer records linked to an expert map to `expert`.
 
 That split is why the web app cannot send everyone to the right pages from one login, and why a farmer JWT cannot open admin screens even if the UI thinks they are an admin.
 
@@ -40,14 +40,14 @@ Whatever host the API is deployed on. Paths below are absolute from the API root
 Authorization: Bearer <access_token>
 ```
 
-There are **two incompatible JWTs**:
+The primary web JWT has one audience and one role claim:
 
 | Token from | Audience (`aud`) | Default lifetime | Refresh |
 | --- | --- | --- | --- |
-| `POST /auth/login` or `POST /farmers/login` | `agritech-farmers` | `ACCESS_TOKEN_EXPIRE_MINUTES` (default **1440 = 24 hours**, and **capped at 1440**) | None |
-| `POST /staff/login` | `agritech-staff` | `STAFF_ACCESS_TOKEN_EXPIRE_MINUTES` (default **30 minutes**) | Yes: `STAFF_REFRESH_TOKEN_EXPIRE_DAYS` (default 14 days) |
+| `POST /auth/login` | `agritech-farmers` | `ACCESS_TOKEN_EXPIRE_MINUTES` (default 24 hours) | `POST /auth/refresh`, default 14 days |
+| `POST /staff/login` | `agritech-staff` | Legacy 30 minutes | Legacy `/staff/refresh`; migrate away |
 
-A farmer token on a staff/admin route returns **401/403**. A staff token on a farmer route (`get_current_farmer`) returns **401**.
+The new `/auth/login` token carries `role`. Some `/admin/*` routes still use the legacy staff table during migration; do not treat `/staff/*` as the target frontend contract.
 
 ### Phone numbers
 
@@ -88,7 +88,7 @@ JWT is **stateless**. The server does not keep a web session. If the UI kicks th
 - Lifetime cannot be longer than **24 hours** with the current settings validator (`le=1440`).
 - If the SPA treats any 401 as “log out”, the farmer looks “logged out” once a day (or sooner if `ACCESS_TOKEN_EXPIRE_MINUTES` is set lower in env).
 
-**Suggested fix:** issue farmer access + refresh tokens (same pattern as staff). Frontend: on 401, try refresh once, then send the user to login. Put `exp` (or `expires_in` seconds) in the login JSON so the client can refresh *before* expiry.
+**Required backend fix:** issue farmer access + refresh tokens (same token family as every other web role). Frontend: on 401, try refresh once, then send the user to login. Put `exp` (or `expires_in` seconds) in the login JSON so the client can refresh *before* expiry.
 
 ### 4.2 Staff / admin web: 30-minute access token
 
@@ -96,13 +96,13 @@ JWT is **stateless**. The server does not keep a web session. If the UI kicks th
 - Refresh exists (`POST /staff/refresh`) and is also set as HttpOnly cookie `staff_refresh`.
 - If the frontend never calls refresh (or cannot send the cookie because of cross-origin + `SameSite=Lax` + `path=/staff`), the dashboard dies every 30 minutes.
 
-**Suggested fix:** always persist `refresh_token` from the JSON body (not only the cookie) for SPA clients. Call `/staff/refresh` on a timer or on 401. Lengthen staff access TTL for a dashboard (for example 8–12 hours) **or** keep 30 minutes but make refresh automatic and reliable.
+**Required backend/frontend fix:** keep refresh in the JSON contract for SPA clients and make refresh automatic. The current cookie is a fragile fallback: cross-origin requests need credentials, `SameSite=None; Secure`, and a valid explicit origin; `path=/staff` also limits where the browser sends it. Do not rely on the cookie alone.
 
 ### 4.3 Two JWT audiences
 
 Decoding farmer tokens requires `aud = agritech-farmers`. Staff tokens require `aud = agritech-staff`. Storing “the token” in one localStorage key and using it on both farmer and admin pages will look like random session death.
 
-**Suggested fix:** one login endpoint, one token family, a `role` claim. Until then, keep two storage keys and never send a farmer token to `/admin` or `/staff`.
+**Required backend fix:** one login endpoint, one token family, and a `role` claim. Until then, keep separate storage keys and never send a farmer token to `/admin` or `/staff`.
 
 ### 4.4 Issuer / secret / env mismatch
 
@@ -286,9 +286,9 @@ Frontend: connectivity check.
 
 ---
 
-### Authentication — farmers (web)
+### Authentication — role-based web identity
 
-#### `POST /auth/login` — **prefer this for the farmer app**
+#### `POST /auth/login` — **primary role-based web login**
 
 **Auth:** Public (rate-limited).
 
@@ -304,19 +304,40 @@ Request:
 - `phone_number`: 10–20 chars, normalized.
 - `pin`: 4–10 **digits only**.
 
-Response `200`: farmer `TokenResponse`.
+Response `200`:
+
+```json
+{
+  "access_token": "<jwt>",
+  "refresh_token": "<jwt>",
+  "token_type": "bearer",
+  "expires_in": 86400,
+  "role": "farmer",
+  "user_id": "uuid"
+}
+```
+
+`role` is `farmer`, `expert`, or `admin`. Farmers submit their PIN. Migrated admin/expert identities submit the credential provisioned for their shared `web_users` identity.
 
 Errors: `401` invalid phone/PIN or inactive account; `429` too many attempts.
 
-**Frontend:** save `access_token`, send on all farmer routes. There is no refresh. Plan for re-login when 401.
+**Frontend:** save both tokens, route from `role`, and call `/auth/refresh` before expiry or once after a 401.
+
+#### `POST /auth/refresh`
+
+**Auth:** Public with a refresh token.
+
+Request: `{ "refresh_token": "<refresh JWT>" }`.
+
+Response: the same role-aware token object as `/auth/login`. Access tokens cannot be submitted as refresh tokens.
 
 #### `GET /auth/me`
 
-**Auth:** Farmer JWT.
+**Auth:** Any role-based web JWT.
 
-Response: `FarmerResponse`.
+Response: `{ id, role, full_name, phone_number, email, farmer_id, expert_id }`.
 
-**Frontend:** bootstrap farmer session, onboarding (`setup_complete` / `missing_profile_items`). Not valid for staff tokens.
+**Frontend:** bootstrap the shell and route from `role`. Use `GET /farmers/me` for farmer profile and onboarding fields when `role=farmer`.
 
 ---
 
@@ -1269,26 +1290,67 @@ Not a frontend payment API. Web should not poll this URL.
 | Recommendations | `POST /recommendations/jobs` → poll |
 | Experts | `GET /experts/` → `POST /expert-request` → `GET /farmers/me/expert-requests` |
 | Alerts | `GET /outbreak-alerts/nearby` |
-| Admin login | `POST /staff/login` + refresh loop |
+| Admin login | `POST /auth/login` with `role=admin` + `POST /auth/refresh` |
 | Admin home | `GET /admin/overview` |
 | Officer inbox | `GET /admin/expert-requests` |
 
-On **401**: farmer → login again (no refresh). Staff → `POST /staff/refresh` once, then login.  
+On **401**: call `POST /auth/refresh` once with the stored JSON refresh token, retry the request, then send the user to login if refresh fails. Legacy staff clients use `/staff/refresh` until migrated.
 On **403**: wrong persona/token, not an expired session.
 
 ---
 
-## 10. Fix list (backend, in order) — do not implement in this pass
+## 10. Endpoint status: missing, broken, empty, and attention
 
-1. **Unify web auth** behind one login and one JWT family with `role`: `farmer` | `expert` | `admin`. Return `role`, `expires_in`, `refresh_token`.
-2. **Add refresh for farmers** (and keep refresh for admin/expert). Document that USSD/SMS never use these tokens.
-3. **Give experts a real login** against the `experts` row (or a shared `users` table). Add `GET /experts/me/requests` (and accept/reject) so they do not go through `/staff` + `/admin`.
-4. **Remove `StaffUser`**: migrate platform_admin → admin users; officers with `expert_id` → expert users; delete `/staff/*`, staff cookies, staff audience, startup staff bootstrap, `/admin/staff`, `/admin/field-officers` as currently designed.
-5. **Remove `ADMIN_FARMER_IDS`** as the admin gate. Admin is a role, not an env UUID list.
-6. **Authorize `/admin/*` with `role=admin`** (and expert-scoped request APIs with `role=expert`). Stop dual `require_admin_or_staff` that accepts two token types.
-7. **Deprecate `POST /farmers/login`** (query-string phone) in favour of `POST /auth/login`.
-8. **Sliding SMS session TTL** on each valid reply; keep USSD as a short launcher.
-9. **CORS + refresh**: for a separate SPA origin, prefer refresh-in-body over cookies, or set cookie `SameSite=None; Secure` and an explicit SPA origin in `CORS_ORIGINS`.
-10. **Login response for routing**: never force the frontend to infer pages from token audience. `GET /auth/me` must include `role`.
+This is the handoff list for backend work. “Missing” means the SPA has no supported endpoint. “Requires fixing” means a route exists but its auth contract, response, or behavior is incompatible with the target product. “Empty by design” means the route is implemented but can legitimately return no rows when the database has no matching data; it is not a missing endpoint.
 
-Until (1)–(4) land, the frontend cannot correctly send **admin, expert, and farmer** to their own pages from a single auth flow. That is a backend identity problem, not a missing React route.
+### Missing endpoints
+
+| Endpoint | Status | Why it is needed |
+| --- | --- | --- |
+| `POST /auth/refresh` | **Implemented** | Accepts a refresh token in the JSON body and returns a new access/refresh pair. |
+| Unified `POST /auth/login` for `farmer \| expert \| admin` | **Implemented** | Uses the shared `web_users` identity and returns the role for SPA routing. Expert/admin credentials still need provisioning for accounts created without credentials. |
+| Unified `GET /auth/me` | **Implemented** | Returns `id`, `role`, `full_name`, `phone_number`, and linked farmer/expert IDs. |
+| `GET /experts/me` | **Missing** | An expert needs a self profile and availability endpoint without `/staff/me`. |
+| `GET /experts/me/requests` | **Missing** | Experts currently reach assigned requests only through staff-scoped `/admin/expert-requests`. |
+| `PATCH /experts/me/requests/{request_id}` | **Missing** | Experts need an owner-scoped accept/reject/status action. The current generic `PATCH /expert-request/status` is admin/staff-only. |
+| `PATCH /experts/me/availability` | **Missing** | Replace officer-only `PATCH /admin/me/availability` with an expert-owned route. |
+
+### Existing endpoints that require fixing
+
+| Endpoint or surface | Status | Required change |
+| --- | --- | --- |
+| `POST /auth/login` | **Implemented / attention** | Unified token contract is live. Provision credentials for experts and admins, and migrate clients off `/staff/login`. |
+| `GET /auth/me` and `GET /farmers/me` | **Implemented / attention** | `/auth/me` is role-aware; `/farmers/me` remains the farmer profile endpoint and requires a farmer identity. |
+| `POST /farmers/login` | **Requires fixing** | Deprecate and eventually remove this duplicate login. Its phone number is a query parameter, which is easy for clients to send incorrectly. |
+| `POST /staff/login`, `POST /staff/refresh`, `POST /staff/logout`, `GET /staff/me` | **Requires migration** | Keep temporarily for compatibility, but new website sign-in must use `/auth/login` and `/auth/refresh`. Remove staff routes, cookies, staff audience, and `StaffUser` after clients migrate. |
+| All `/admin/*` routes | **Compatibility enabled / migration needed** | Shared `role=admin` access tokens now pass the existing admin dependency layer. The handlers still have `StaffUser`-shaped internals, so migrate those types before deleting the legacy table. |
+| `GET|POST|PATCH /admin/staff` and `POST /admin/field-officers` | **Requires migration** | These create and manage the identity table that is being retired. Replace with admin/expert user management; do not expose these in the new SPA. |
+| `GET /farmers/` and `PATCH /experts/{expert_id}/contact-verification` | **Requires fixing** | Stop accepting `ADMIN_FARMER_IDS` as an admin source of truth. Use `role=admin` only. |
+| `GET /expert-requests`, `PATCH /expert-request/status` | **Requires fixing** | These currently accept admin-farmer or platform-admin staff through `require_admin_or_staff`. Split into admin management and expert-owned actions. |
+| `PATCH /admin/me/availability` | **Requires migration** | It is officer-shaped and requires `StaffUser.expert_id`; replace with `PATCH /experts/me/availability`. |
+| `GET /experts/` | **Requires fixing** | It currently requires a farmer JWT. Decide whether the shared directory is public or allow all appropriate roles; keep farmer-only access only if intentional. |
+| Staff refresh cookie | **Legacy / avoid for website** | The website should store the JSON `refresh_token` from `/auth/login` and submit it to `/auth/refresh`. Do not depend on the legacy `SameSite=Lax`, `path=/staff` cookie across origins. |
+| SMS session advancement | **Implemented / verify** | Valid replies reset `expires_at` using `SMS_SESSION_TTL_HOURS` (24 hours by default). USSD and SMS webhook contracts are unchanged; verify the worker and expiry task against production traffic. |
+
+### Empty or placeholder behavior to verify
+
+These routes exist, but an empty response can be either valid or a product/data problem. The frontend should distinguish “no records yet” from an unavailable endpoint and the backend should seed or monitor the required data.
+
+| Endpoint | Empty result to watch | Attention |
+| --- | --- | --- |
+| `GET /recommendations/` | `[]` for a new farmer | Valid before the first recommendation; show an empty state and verify the generation job creates a row. |
+| `GET /notifications/` and `GET /notifications/unread-count` | No items or `unread_count: 0` | Valid for a new farmer; verify notification producers are running when events occur. |
+| `GET /experts/` | `items: []` | Valid only if no directory experts are seeded; expert discovery cannot work until expert records exist. |
+| `GET /market-prices/`, `/market-prices/county/{county_id}`, `/market-prices/crop/{crop_id}` | `[]` | Verify the KAMIS/manual ingestion job and display a dated “no prices” state rather than treating it as an API failure. |
+| `GET /vendors` and `GET /vendors/{vendor_id}/products` | Empty catalogue | Verify vendor/product seed data before releasing the agrovet screen. |
+| `GET /outbreak-alerts/nearby` | `[]` | Valid when no local alert exists; `422` without farmer coordinates is the actual setup issue. |
+| `GET /admin/*` list/report routes | Zero totals or empty `items` | Valid for a new installation, but verify migrations, seed data, and background jobs before calling the dashboard complete. |
+
+### Operational endpoints needing attention
+
+- `POST /ussd` is a webhook, not a web session. It uses Africa's Talking's short `sessionId` lifetime, Redis PIN caching, and deliberately ends service selection to continue by SMS. The role/JWT changes do not alter this farmer phone + PIN flow.
+- `POST /sms` and `POST /sms/delivery` return webhook acknowledgements; they are not frontend polling APIs. Delivery processing is asynchronous.
+- `POST /mpesa/callback` acknowledges Daraja and queues processing. It is not a payment-status endpoint; add a farmer-facing payment/status resource if the SPA must show payment progress.
+- `GET /health` reports configuration booleans and database/provider health, but it is not an authentication probe and should not be used to decide whether a user session is valid.
+
+Until expert-owned routes and complete role-based admin authorization land, the frontend cannot give **admin, expert, and farmer** fully separate page capabilities. The shared login and role-based routing contract is now available.

@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -6,6 +7,7 @@ from jose import JWTError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_farmer
+from app.auth.model import WebRole, WebUser
 from app.auth.security import decode_access_token
 from app.core.config import settings
 from app.database.sessions import get_db
@@ -41,17 +43,40 @@ def get_current_staff(
         detail="Could not validate staff credentials.",
     )
     try:
-        payload = decode_staff_token(token, token_type="access")
-        staff_id = payload.get("sub")
+        try:
+            payload = decode_staff_token(token, token_type="access")
+        except JWTError:
+            payload = decode_access_token(token)
+            if payload.get("typ", "access") != "access" or payload.get("role") not in {WebRole.ADMIN.value, WebRole.EXPERT.value}:
+                raise credentials_exception
+        staff_id = UUID(str(payload.get("sub")))
         if staff_id is None:
             raise credentials_exception
-    except JWTError:
+    except (JWTError, ValueError, TypeError):
         raise credentials_exception
 
     staff = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
-    if staff is None or not staff.is_active:
-        raise credentials_exception
-    return staff
+    if staff is not None and staff.is_active:
+        return staff
+
+    if payload.get("role") == WebRole.ADMIN.value:
+        return SimpleNamespace(
+            id=staff_id,
+            role=StaffRole.PLATFORM_ADMIN,
+            expert_id=None,
+            is_active=True,
+        )
+    if payload.get("role") == WebRole.EXPERT.value:
+        identity = db.query(WebUser).filter(WebUser.id == staff_id, WebUser.is_active.is_(True)).first()
+        if identity is not None and identity.expert_id is not None:
+            return SimpleNamespace(
+                id=identity.id,
+                role=StaffRole.OFFICER,
+                expert_id=identity.expert_id,
+                is_active=True,
+            )
+
+    raise credentials_exception
 
 
 def require_roles(*roles: StaffRole):
@@ -73,6 +98,15 @@ def require_admin_or_staff(
     db: Session = Depends(get_db),
 ) -> Farmer | StaffUser:
     """Accept an admin-farmer JWT or a platform_admin staff JWT."""
+
+    try:
+        payload = decode_access_token(token)
+        identity_id = UUID(str(payload.get("sub")))
+        identity = db.query(WebUser).filter(WebUser.id == identity_id, WebUser.is_active.is_(True)).first()
+        if identity and identity.role == WebRole.ADMIN:
+            return identity
+    except JWTError:
+        pass
 
     try:
         payload = decode_access_token(token)

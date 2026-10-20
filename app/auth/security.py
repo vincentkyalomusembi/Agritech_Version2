@@ -164,6 +164,20 @@ def create_access_token(
     return encoded_jwt
 
 
+def create_refresh_token(data: dict[str, Any]) -> str:
+    return create_access_token(
+        {**data, "typ": "refresh"},
+        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+
+
+def decode_refresh_token(token: str) -> dict[str, Any]:
+    payload = decode_access_token(token)
+    if payload.get("typ") != "refresh":
+        raise JWTError("Wrong token type.")
+    return payload
+
+
 
 # Decode JWT Access Token
 
