@@ -44,6 +44,7 @@ class SMSSessionService:
         session.session_data = json.dumps(data)
         session.current_step += 1
         session.invalid_reply_count = 0
+        session.expires_at = self._ttl()
         self.repository.update(session)
 
     def record_invalid_reply(self, session) -> int:

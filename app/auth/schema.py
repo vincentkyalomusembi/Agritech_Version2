@@ -24,7 +24,7 @@ class LoginRequest(BaseModel):
     pin: str = Field(
         ...,
         min_length=4,
-        max_length=10,
+        max_length=128,
     )
 
     # ---- Copilot Improvement ----
@@ -38,8 +38,6 @@ class LoginRequest(BaseModel):
     @field_validator("pin")
     @classmethod
     def validate_pin(cls, value: str) -> str:
-        if not value.isdigit():
-            raise ValueError("PIN must contain digits only.")
         return value
 
 
@@ -47,10 +45,30 @@ class TokenResponse(BaseModel):
     """JWT returned after login."""
 
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+    expires_in: int
+    role: str
+    user_id: UUID
 
 
 class TokenData(BaseModel):
     """JWT payload."""
 
     farmer_id: UUID
+
+
+class AuthMeResponse(BaseModel):
+    id: UUID
+    role: str
+    full_name: str
+    phone_number: str
+    email: str | None = None
+    farmer_id: UUID | None = None
+    expert_id: UUID | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str | None = None

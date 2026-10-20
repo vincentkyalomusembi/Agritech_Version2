@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_farmer, require_admin
+from app.auth.schema import LoginRequest
+from app.auth.service import login_web_user
 from app.staff.dependencies import require_admin_or_staff
 from app.database.sessions import get_db
 from app.core.rate_limit import limit_login_attempts
@@ -72,15 +74,10 @@ def login_farmer(
 
     service = AuthenticationService(db)
 
-    token = service.login(
-        phone_number=phone_number,
-        pin=login_data.pin,
-    )
-
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-    }
+    return login_web_user(
+        db,
+        LoginRequest(phone_number=phone_number, pin=login_data.pin),
+    )[1]
 
 
 @router.get(
