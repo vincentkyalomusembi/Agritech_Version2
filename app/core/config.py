@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(default="", repr=False)
     JWT_ISSUER: str = "agritech-ai"
     JWT_AUDIENCE: str = "agritech-farmers"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=5, le=1440)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, ge=5, le=1440)
     ADMIN_FARMER_IDS: str = ""
     STAFF_JWT_AUDIENCE: str = "agritech-staff"
     STAFF_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=5, le=1440)
