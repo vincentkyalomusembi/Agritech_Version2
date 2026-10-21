@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     JWT_ISSUER: str = "agritech-ai"
     JWT_AUDIENCE: str = "agritech-farmers"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, ge=5, le=1440)
-    ADMIN_FARMER_IDS: str = ""
     STAFF_JWT_AUDIENCE: str = "agritech-staff"
     STAFF_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=5, le=1440)
     STAFF_REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=14, ge=1, le=90)

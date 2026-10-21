@@ -84,13 +84,9 @@ def start_recommendation_job(
         job_id = create_job(current_farmer.id, payload.kind, answers)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Recommendations are temporarily unavailable.") from exc
-    try:
-        from app.tasks.recommendation_job_tasks import generate_recommendation_job
-        generate_recommendation_job.delay(job_id, str(current_farmer.id), payload.kind, answers)
-    except Exception:
-        # Queue unreachable: run in this process after the response instead.
-        logger.warning("Celery unavailable; running recommendation job %s in-process", job_id)
-        background_tasks.add_task(run_job, job_id, str(current_farmer.id), payload.kind, answers)
+    # Run immediately after returning 202. A delayed Celery worker made the
+    # website show a waiting state and delayed the SMS unnecessarily.
+    background_tasks.add_task(run_job, job_id, str(current_farmer.id), payload.kind, answers)
     return {"job_id": job_id, "status": "queued"}
 
 

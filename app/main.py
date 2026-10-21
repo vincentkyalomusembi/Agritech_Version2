@@ -30,7 +30,6 @@ from app.notifications.routes import router as notifications_router
 from app.market_prices.routes import router as market_prices_router
 from app.advisory.routes import router as advisory_router
 from app.products.routes import router as products_router
-from app.staff.routes import router as staff_router
 from app.admin.routes import router as admin_router
 from app.pricing.routes import router as pricing_router
 from app.recommendations.routes import router as recommendations_router
@@ -65,7 +64,6 @@ app.include_router(notifications_router)
 app.include_router(market_prices_router)
 app.include_router(advisory_router)
 app.include_router(products_router)
-app.include_router(staff_router)
 app.include_router(admin_router)
 app.include_router(pricing_router)
 app.include_router(recommendations_router)
@@ -106,23 +104,6 @@ async def time_requests(request: Request, call_next):
     if elapsed >= SLOW_REQUEST_SECONDS:
         logger.warning("Slow request %s %s took %.2fs", request.method, request.url.path, elapsed)
     return response
-
-
-@app.on_event("startup")
-def bootstrap_staff_admin() -> None:
-    if not settings.STAFF_BOOTSTRAP_PHONE or not settings.STAFF_BOOTSTRAP_PASSWORD:
-        return
-    from app.database.sessions import SessionLocal
-    from app.staff.service import StaffService
-
-    db = SessionLocal()
-    try:
-        StaffService(db).bootstrap_if_empty(
-            settings.STAFF_BOOTSTRAP_PHONE,
-            settings.STAFF_BOOTSTRAP_PASSWORD,
-        )
-    finally:
-        db.close()
 
 
 @app.on_event("startup")

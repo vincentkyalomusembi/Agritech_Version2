@@ -68,12 +68,10 @@ CORS is only enabled if `CORS_ORIGINS` is set (comma-separated origins). Staff r
 | Persona you want | How they log in today | What they can hit | Page routing reality |
 | --- | --- | --- | --- |
 | **Farmer** | Phone + PIN → farmer JWT | Farmer profile, crops, livestock, recommendations, weather, notifications, expert **requests**, nearby outbreak alerts, subscription quote | Works if you store farmer JWT and never mix it with staff routes. |
-| **Admin** | Either (a) staff login as `platform_admin`, or (b) a **farmer** whose UUID is listed in env `ADMIN_FARMER_IDS` | (a) `/admin/*` + `/staff/me`. (b) only endpoints that use `require_admin` / `require_admin_or_staff` — **not** most `/admin/*` dashboards, which require a **staff** JWT | Admin dashboard pages that call `/admin/overview` **must** use staff login. A farmer marked “admin” in env still cannot load those pages. |
-| **Expert** | **No expert login.** Closest path: create a staff user with role `officer` linked to `expert_id`, then `POST /staff/login` | Officer can see assigned expert requests and limited farmer detail under `/admin/...`. Listing experts for farmers is `GET /experts/` with a **farmer** JWT | There is no `role: expert` in any login response. The frontend cannot route “expert home” from `/auth/login` or `/auth/me`. |
+| **Admin** | `POST /auth/login` with an admin identity | `/admin/*` using the shared `role=admin` JWT | Route to admin pages from the login response role. |
+| **Expert** | `POST /auth/login` with an expert identity | `/experts/me`, `/experts/me/requests`, `/experts/me/availability` | Route to expert pages from the login response role. |
 
-`GET /auth/me` and `GET /farmers/me` return a **farmer** object with **no `role` field**.
-
-`GET /staff/me` returns a **staff** object with `role` = `platform_admin` \| `officer` only.
+`GET /auth/me` returns the shared identity with `role`; `GET /farmers/me` remains the farmer profile endpoint.
 
 ---
 
@@ -184,17 +182,17 @@ Never use env `ADMIN_FARMER_IDS` as the source of truth for admin UI.
 2. Migrate `staff_users.role = platform_admin` → user `role = admin`.
 3. Migrate `staff_users.role = officer` with `expert_id` → that expert becomes `role = expert` (same phone). Officers with no expert link should become admin or be dropped.
 4. Replace every `get_current_staff` / `require_roles(PLATFORM_ADMIN)` with `get_current_user` + `role == admin` (or expert where officers work today).
-5. Add expert-owned routes (today they only exist as `/admin/expert-requests` filtered by `staff.expert_id`). Example: `GET /experts/me/requests`.
+5. Expert-owned routes are now available at `/experts/me`, `/experts/me/requests`, and `/experts/me/availability`.
 6. Delete `/staff/*`, `StaffUser`, staff cookies, `STAFF_JWT_AUDIENCE`, bootstrap staff on startup.
 7. Stop requiring a farmer JWT to `GET /experts/` if experts should use the directory too; or keep it farmer-only and give experts a different list.
 
 ### 5.4 Frontend routing until backend ships roles
 
-Until the backend change exists:
+Current routing:
 
 - Farmer app: `POST /auth/login` → store farmer token → `GET /farmers/me`.
-- Admin app: `POST /staff/login` → if `role === "platform_admin"` go to admin; if `role === "officer"` go to officer/expert-ish inbox. Call `/staff/refresh` before 30 minutes.
-- Do not build “expert login” on `/auth/login`; it cannot succeed.
+- Admin/expert app: `POST /auth/login` → route from `role`; call `/auth/refresh` before access expiry.
+- Expert credentials must be provisioned for the expert's shared `web_users` identity before expert login can succeed.
 - Do not send farmers to `/admin/overview`.
 
 ---
@@ -825,7 +823,7 @@ Query: `status_filter`. Up to 200 rows. Admin list; officers should use `/admin/
 { "request_id": "uuid", "status": "Accepted" }
 ```
 
-**Gap:** a real expert has no dedicated accept/reject API except by logging in as **staff officer** and patching `/admin/expert-requests/{id}`.
+Expert web clients should use `PATCH /experts/me/requests/{request_id}` with an assigned request. Admin clients may continue using the admin request routes during migration.
 
 ---
 
@@ -1035,11 +1033,13 @@ Returns `AlertResponse[]` (see admin outbreak schemas). **Frontend:** map/home b
 
 ---
 
-### Staff login (current admin/officer — to be removed)
+### Staff login (removed)
 
 Prefix: `/staff`
 
-#### `POST /staff/login`
+The `/staff/*` web routes are no longer registered. Use `POST /auth/login`, `POST /auth/refresh`, and `GET /auth/me` instead. The legacy descriptions below are migration notes only.
+
+#### `POST /staff/login` (removed)
 
 ```json
 { "phone_number": "0712345678", "password": "min 8 chars" }
@@ -1288,11 +1288,12 @@ Not a frontend payment API. Web should not poll this URL.
 | Prices | `GET /market-prices/county/{county_id}` |
 | Agrovets | `GET /vendors` + events |
 | Recommendations | `POST /recommendations/jobs` → poll |
-| Experts | `GET /experts/` → `POST /expert-request` → `GET /farmers/me/expert-requests` |
+| Experts | `GET /experts/` → `POST /expert-request` → `GET /farmers/me/expert-requests`; expert shell uses `/experts/me` and `/experts/me/requests` |
 | Alerts | `GET /outbreak-alerts/nearby` |
 | Admin login | `POST /auth/login` with `role=admin` + `POST /auth/refresh` |
 | Admin home | `GET /admin/overview` |
-| Officer inbox | `GET /admin/expert-requests` |
+| Expert home | `GET /experts/me` + `GET /experts/me/requests` |
+| Expert availability | `PATCH /experts/me/availability` |
 
 On **401**: call `POST /auth/refresh` once with the stored JSON refresh token, retry the request, then send the user to login if refresh fails. Legacy staff clients use `/staff/refresh` until migrated.
 On **403**: wrong persona/token, not an expired session.
@@ -1310,10 +1311,10 @@ This is the handoff list for backend work. “Missing” means the SPA has no su
 | `POST /auth/refresh` | **Implemented** | Accepts a refresh token in the JSON body and returns a new access/refresh pair. |
 | Unified `POST /auth/login` for `farmer \| expert \| admin` | **Implemented** | Uses the shared `web_users` identity and returns the role for SPA routing. Expert/admin credentials still need provisioning for accounts created without credentials. |
 | Unified `GET /auth/me` | **Implemented** | Returns `id`, `role`, `full_name`, `phone_number`, and linked farmer/expert IDs. |
-| `GET /experts/me` | **Missing** | An expert needs a self profile and availability endpoint without `/staff/me`. |
-| `GET /experts/me/requests` | **Missing** | Experts currently reach assigned requests only through staff-scoped `/admin/expert-requests`. |
-| `PATCH /experts/me/requests/{request_id}` | **Missing** | Experts need an owner-scoped accept/reject/status action. The current generic `PATCH /expert-request/status` is admin/staff-only. |
-| `PATCH /experts/me/availability` | **Missing** | Replace officer-only `PATCH /admin/me/availability` with an expert-owned route. |
+| `GET /experts/me` | **Implemented** | Returns the signed-in expert profile using the shared `role=expert` token. |
+| `GET /experts/me/requests` | **Implemented** | Lists requests assigned to the signed-in expert; supports `status`, `limit`, and `offset`. |
+| `PATCH /experts/me/requests/{request_id}` | **Implemented** | Updates an assigned request with ownership checking. Body includes `request_id` and `status`. |
+| `PATCH /experts/me/availability` | **Implemented** | Updates availability for the signed-in expert. |
 
 ### Existing endpoints that require fixing
 
@@ -1322,15 +1323,17 @@ This is the handoff list for backend work. “Missing” means the SPA has no su
 | `POST /auth/login` | **Implemented / attention** | Unified token contract is live. Provision credentials for experts and admins, and migrate clients off `/staff/login`. |
 | `GET /auth/me` and `GET /farmers/me` | **Implemented / attention** | `/auth/me` is role-aware; `/farmers/me` remains the farmer profile endpoint and requires a farmer identity. |
 | `POST /farmers/login` | **Requires fixing** | Deprecate and eventually remove this duplicate login. Its phone number is a query parameter, which is easy for clients to send incorrectly. |
-| `POST /staff/login`, `POST /staff/refresh`, `POST /staff/logout`, `GET /staff/me` | **Requires migration** | Keep temporarily for compatibility, but new website sign-in must use `/auth/login` and `/auth/refresh`. Remove staff routes, cookies, staff audience, and `StaffUser` after clients migrate. |
+| `POST /staff/login`, `POST /staff/refresh`, `POST /staff/logout`, `GET /staff/me` | **Removed** | The website must use `/auth/login` and `/auth/refresh`. `StaffUser` remains only as an internal migration dependency for old admin records and audit foreign keys. |
 | All `/admin/*` routes | **Compatibility enabled / migration needed** | Shared `role=admin` access tokens now pass the existing admin dependency layer. The handlers still have `StaffUser`-shaped internals, so migrate those types before deleting the legacy table. |
 | `GET|POST|PATCH /admin/staff` and `POST /admin/field-officers` | **Requires migration** | These create and manage the identity table that is being retired. Replace with admin/expert user management; do not expose these in the new SPA. |
-| `GET /farmers/` and `PATCH /experts/{expert_id}/contact-verification` | **Requires fixing** | Stop accepting `ADMIN_FARMER_IDS` as an admin source of truth. Use `role=admin` only. |
-| `GET /expert-requests`, `PATCH /expert-request/status` | **Requires fixing** | These currently accept admin-farmer or platform-admin staff through `require_admin_or_staff`. Split into admin management and expert-owned actions. |
+| `GET /farmers/` and `PATCH /experts/{expert_id}/contact-verification` | **Implemented / attention** | Admin access now comes from `role=admin`; the old `ADMIN_FARMER_IDS` fallback has been removed. |
+| `GET /expert-requests`, `PATCH /expert-request/status` | **Legacy admin surface** | Expert-owned actions are now under `/experts/me/requests/{request_id}`. Keep these generic routes for admin compatibility until the remaining admin internals are migrated. |
 | `PATCH /admin/me/availability` | **Requires migration** | It is officer-shaped and requires `StaffUser.expert_id`; replace with `PATCH /experts/me/availability`. |
-| `GET /experts/` | **Requires fixing** | It currently requires a farmer JWT. Decide whether the shared directory is public or allow all appropriate roles; keep farmer-only access only if intentional. |
+| `GET /experts/` | **Implemented / attention** | Any authenticated website role can read the directory. The database contains seeded expert records; USSD/SMS behavior is unchanged. |
 | Staff refresh cookie | **Legacy / avoid for website** | The website should store the JSON `refresh_token` from `/auth/login` and submit it to `/auth/refresh`. Do not depend on the legacy `SameSite=Lax`, `path=/staff` cookie across origins. |
 | SMS session advancement | **Implemented / verify** | Valid replies reset `expires_at` using `SMS_SESSION_TTL_HOURS` (24 hours by default). USSD and SMS webhook contracts are unchanged; verify the worker and expiry task against production traffic. |
+| Recommendation delivery | **Implemented / verify** | Web job requests run immediately in the API background task, and SMS crop/livestock tasks execute from the SMS handler background task instead of waiting for a delayed worker. Provider delivery can still fail or take time. |
+| New-farmer SMS profile | **Implemented / verify** | After name and county, SMS now asks for `constituency/sub-county, ward` before marking the profile complete. Existing farmers can use SMS Profile option 6. |
 
 ### Empty or placeholder behavior to verify
 
@@ -1341,9 +1344,9 @@ These routes exist, but an empty response can be either valid or a product/data 
 | `GET /recommendations/` | `[]` for a new farmer | Valid before the first recommendation; show an empty state and verify the generation job creates a row. |
 | `GET /notifications/` and `GET /notifications/unread-count` | No items or `unread_count: 0` | Valid for a new farmer; verify notification producers are running when events occur. |
 | `GET /experts/` | `items: []` | Valid only if no directory experts are seeded; expert discovery cannot work until expert records exist. |
-| `GET /market-prices/`, `/market-prices/county/{county_id}`, `/market-prices/crop/{crop_id}` | `[]` | Verify the KAMIS/manual ingestion job and display a dated “no prices” state rather than treating it as an API failure. |
+| `GET /market-prices/`, `/market-prices/county/{county_id}`, `/market-prices/crop/{crop_id}` | `[]` | **Currently empty in the database.** Verify/run KAMIS or manual ingestion before releasing price screens; display a dated “no prices” state rather than treating it as an API failure. |
 | `GET /vendors` and `GET /vendors/{vendor_id}/products` | Empty catalogue | Verify vendor/product seed data before releasing the agrovet screen. |
-| `GET /outbreak-alerts/nearby` | `[]` | Valid when no local alert exists; `422` without farmer coordinates is the actual setup issue. |
+| `GET /outbreak-alerts/nearby` | `[]` | **Currently empty in the database.** This is valid when no alert exists; `422` without farmer coordinates is the actual setup issue. |
 | `GET /admin/*` list/report routes | Zero totals or empty `items` | Valid for a new installation, but verify migrations, seed data, and background jobs before calling the dashboard complete. |
 
 ### Operational endpoints needing attention
