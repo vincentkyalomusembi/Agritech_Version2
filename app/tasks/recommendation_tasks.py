@@ -52,10 +52,13 @@ def run_crop_recommendation(self, session_id: str, farmer_id: str, phone: str):
                 logger.error("Crop recommendation SMS submission failed: %s", outcome.get("reason"))
     except Exception as exc:
         db.rollback()
-        try:
-            raise self.retry(exc=exc)
-        except self.MaxRetriesExceededError:
+        logger.exception("Crop Recommendation failed for farmer_id=%s", farmer_id)
+        # Inline (eager) runs re-raise the original error instead of MaxRetriesExceededError,
+        # so tell the farmer directly rather than leaving them waiting.
+        if self.request.is_eager or self.request.retries >= self.max_retries:
             _send_failure_sms(phone, "Crop Recommendation")
+        else:
+            raise self.retry(exc=exc)
     finally:
         db.close()
 
@@ -86,10 +89,11 @@ def run_livestock_recommendation(self, session_id: str, farmer_id: str, phone: s
                 logger.error("Livestock recommendation SMS submission failed: %s", outcome.get("reason"))
     except Exception as exc:
         db.rollback()
-        try:
-            raise self.retry(exc=exc)
-        except self.MaxRetriesExceededError:
+        logger.exception("Livestock Recommendation failed for farmer_id=%s", farmer_id)
+        if self.request.is_eager or self.request.retries >= self.max_retries:
             _send_failure_sms(phone, "Livestock Recommendation")
+        else:
+            raise self.retry(exc=exc)
     finally:
         db.close()
 

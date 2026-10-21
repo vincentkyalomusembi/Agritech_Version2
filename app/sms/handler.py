@@ -16,6 +16,8 @@ from app.sms_sessions.repository import SMSSessionRepository
 from app.sms_sessions.service import SMSSessionService
 
 MAX_INVALID_REPLIES = 3
+INFO_REPLY_COOLDOWN_SECONDS = 300
+DUPLICATE_WINDOW_SECONDS = 3600
 
 
 class SMSHandler:
@@ -31,8 +33,12 @@ class SMSHandler:
         phone = normalize_phone_number(phone_number)
         text = text.strip()
 
-        # Idempotency — skip already-processed AT message IDs
-        if message_id and self.session_repo.message_already_processed(message_id):
+        # Blank inbound events (delivery/system pings) are not farmer messages.
+        if not text:
+            return
+
+        # Idempotency — skip already-processed AT message IDs, including webhook retries
+        if message_id and (self.session_repo.message_already_processed(message_id) or self._seen_message(message_id)):
             return
 
         from app.expert_requests.services.expert_request_service import ExpertRequestService
@@ -42,7 +48,8 @@ class SMSHandler:
 
         farmer = self.farmer_repo.get_by_phone(phone)
         if farmer is None:
-            self.sms.send_sms(phone, "Phone not registered. Dial *384# to register.")
+            if self._reply_allowed(phone, "unregistered"):
+                self.sms.send_sms(phone, "Phone not registered. Dial *384# to register.")
             return
 
         if expert_service.handle_farmer_resolution(farmer, text):
@@ -52,11 +59,13 @@ class SMSHandler:
         if command == "STOP":
             self._cancel_active_session(phone, farmer)
             return
-        if command in {"HELP", ""}:
-            self._send_help(phone, farmer.full_name)
+        if command == "HELP":
+            if self._reply_allowed(phone, "help"):
+                self._send_help(phone, farmer.full_name)
             return
         if command == "MENU":
-            self.sms.send_sms(phone, f"Hi {farmer.full_name}, dial *384# to access the main menu.")
+            if self._reply_allowed(phone, "menu"):
+                self.sms.send_sms(phone, f"Hi {farmer.full_name}, dial *384# to access the main menu.")
             return
         if command == "STATUS":
             self._send_status(phone, farmer)
@@ -101,6 +110,20 @@ class SMSHandler:
             return
 
         self._process_reply(session, farmer, phone, text, message_id)
+
+    def _seen_message(self, message_id: str) -> bool:
+        """True if this provider message id was already handled (best effort; fails open)."""
+        try:
+            return not self.redis.set(f"smsmsg:{message_id}", "1", nx=True, ex=DUPLICATE_WINDOW_SECONDS)
+        except Exception:
+            return False
+
+    def _reply_allowed(self, phone: str, kind: str) -> bool:
+        """One informational reply of a kind per phone per cooldown (best effort; fails open)."""
+        try:
+            return bool(self.redis.set(f"smsreply:{kind}:{phone}", "1", nx=True, ex=INFO_REPLY_COOLDOWN_SECONDS))
+        except Exception:
+            return True
 
     def _process_reply(self, session, farmer, phone: str, text: str, message_id: str | None) -> None:
         service_key = session.session_type.value
