@@ -94,7 +94,9 @@ class RecommendationSMSService:
         recipient = next((r for r in recipients if r.get("number") in (None, phone)), recipients[0] if recipients else {})
         raw_status = str(recipient.get("status", "")).lower()
         reason = recipient.get("failureReason") or recipient.get("failure_reason")
-        if raw_status in {"failed", "rejected", "invalid", "error"}:
+        # AT reports acceptance as "Success"; InvalidSenderId, InsufficientBalance,
+        # UserInBlacklist, RiskHold etc. mean the message was not accepted.
+        if raw_status not in {"", "success", "sent", "submitted", "queued", "buffered"}:
             delivery_status = "failed"
             reason = reason or recipient.get("status")
         else:

@@ -165,17 +165,39 @@ class StructuredRecommendationService:
                 "actions": ["Use the package label and local extension advice for planting date and spacing."]}
 
 
+def _sentence(text, limit: int) -> str:
+    """First sentence of text, trimmed to limit characters on a word boundary."""
+    text = " ".join(str(text or "").split())
+    first = text.split(". ")[0].rstrip(".")
+    if len(first) > limit:
+        first = first[:limit].rsplit(" ", 1)[0]
+    return first
+
+
 def format_recommendation_sms(card: dict, max_chars: int = 160) -> list[str]:
+    """Short plain-language SMS; the website shows the full card."""
     primary = card["primary"]
-    name = f"{primary.get('crop') or primary.get('livestock')} {primary['name']}"
+    name = f"{primary.get('crop') or primary.get('livestock')} ({primary['name']})"
+    why = _sentence(card.get("why_fit"), 90)
+    messages = [f"Best choice for your farm: {name}." + (f" {why}." if why else "")]
+    others = [entry.get("crop") or entry.get("livestock") for entry in card.get("alternatives", [])]
+    extras = []
+    if any(others):
+        extras.append(f"Other options: {', '.join(o for o in others if o)}.")
+    if card.get("planting_window"):
+        extras.append(f"Plant: {card['planting_window']}.")
+    tip = (card.get("actions") or [None])[0]
+    if tip:
+        extras.append(f"Tip: {_sentence(tip, 80)}.")
+    if extras:
+        messages.append(" ".join(extras))
     vendors = card.get("vendors") or []
-    price = f" KES {vendors[0]['price_kes']}/{vendors[0]['unit']} at {vendors[0]['name']}" if vendors and vendors[0].get("price_kes") is not None else ""
-    other = ", ".join(f"{entry.get('crop') or entry.get('livestock')} {entry['name']}" for entry in card.get("alternatives", []))
-    planting = card.get("planting_window") or "check local planting rains"
-    spacing = card.get("spacing") or "follow seed label"
-    messages = [f"Try {name}. {card.get('why_fit','')}".strip(),
-                f"Alternatives: {other or 'none verified'}. Plant: {planting}; spacing: {spacing}.",
-                f"Where to buy:{price or ' no matching priced stock listing yet.'}"]
+    if vendors:
+        vendor = vendors[0]
+        price = f" at KES {vendor['price_kes']}/{vendor.get('unit') or 'unit'}" if vendor.get("price_kes") is not None else ""
+        messages.append(f"Buy from {vendor['name']}{price}. Call to confirm stock.")
+    else:
+        messages.append("No priced seller found near you yet.")
     segments = []
     for message in messages:
         while message:
