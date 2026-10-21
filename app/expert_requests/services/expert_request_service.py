@@ -95,17 +95,18 @@ class ExpertRequestService:
         ).all()
         already_offered = {offer.expert_id for offer in self.db.query(ExpertOffer).filter_by(request_id=request.id).all()}
         candidates = [expert for expert in candidates if expert.id not in already_offered]
-        # Score candidates once per request. Repeating the database-heavy score
-        # query during sort and offer creation can stall request processing.
         scored_candidates = [(expert, self._score(expert, request, farmer)) for expert in candidates]
         scored_candidates.sort(key=lambda item: item[1], reverse=True)
-        if not candidates:
+        if not scored_candidates:
             request.expert_id = None
             request.status = RequestStatus.ESCALATED
             self.db.commit()
-            self.sms.send_sms(farmer.phone_number, f"Request {request.request_code}: no expert has accepted yet. Your request is escalated to our support team.")
+            self.sms.send_sms(
+                farmer.phone_number,
+                f"Request {request.request_code}: no expert is available right now.\n"
+                "Your request has been escalated to our support team. We will follow up shortly."
+            )
             return request
-
         expert, score = scored_candidates[0]
         offer = ExpertOffer(
             request_id=request.id,
@@ -117,9 +118,20 @@ class ExpertRequestService:
         request.status = RequestStatus.OFFERED
         self.db.add(offer)
         self.db.commit()
-        self.sms.send_sms(expert.phone_number,
-            f"Expert request {request.request_code}: {request.issue_type}. Reply YES {request.request_code} to accept or NO {request.request_code} to pass. Expires in {OFFER_TIMEOUT_MINUTES} min.")
-        self.sms.send_sms(farmer.phone_number, f"Request {request.request_code} received. Finding an available expert; we will text you when one accepts.")
+        self.sms.send_sms(
+            expert.phone_number,
+            f"AgriTech Expert Request {request.request_code}\n"
+            f"Issue: {request.issue_type}\n"
+            f"Details: {(request.description or '')[:120]}\n"
+            f"Reply YES {request.request_code} to accept or NO {request.request_code} to pass."
+            f" Offer expires in {OFFER_TIMEOUT_MINUTES} min."
+        )
+        self.sms.send_sms(
+            farmer.phone_number,
+            f"Request {request.request_code} received.\n"
+            f"Issue: {request.issue_type}.\n"
+            "We are finding an available expert and will text you when one accepts."
+        )
         return request
 
     def handle_expert_reply(self, phone: str, text: str) -> bool:
@@ -158,8 +170,19 @@ class ExpertRequestService:
             request.status = RequestStatus.ACCEPTED
             self.db.commit()
             farmer = self.farmers.get_by_id(request.farmer_id)
-            self.sms.send_sms(farmer.phone_number, f"{expert.full_name} accepted request {request.request_code}. Contact: {expert.phone_number}. Reply MENU for services.")
-            self.sms.send_sms(expert.phone_number, f"You are assigned request {request.request_code}. Farmer: {farmer.full_name}, {farmer.phone_number}. Reply DONE {request.request_code} when finished.")
+            self.sms.send_sms(
+                farmer.phone_number,
+                f"Request {request.request_code} accepted by {expert.full_name}.\n"
+                f"Expert contact: {expert.phone_number}.\n"
+                "Reply MENU for other services."
+            )
+            self.sms.send_sms(
+                expert.phone_number,
+                f"You are assigned request {request.request_code}.\n"
+                f"Farmer: {farmer.full_name}, {farmer.phone_number}.\n"
+                f"Issue: {request.issue_type}.\n"
+                f"Reply DONE {request.request_code} when the visit is complete."
+            )
         else:
             offer.status = "declined"
             offer.response_note = "declined by expert"
@@ -242,7 +265,12 @@ class ExpertRequestService:
         request.status = RequestStatus.COMPLETED
         self.db.commit()
         farmer = self.farmers.get_by_id(request.farmer_id)
-        self.sms.send_sms(farmer.phone_number, f"Your expert request {request.request_code} is marked complete. Reply SOLVED {request.request_code} or UNSOLVED {request.request_code}.")
+        self.sms.send_sms(
+            farmer.phone_number,
+            f"Your expert request {request.request_code} is marked complete.\n"
+            f"Was your issue resolved?\n"
+            f"Reply SOLVED {request.request_code} if yes, or UNSOLVED {request.request_code} if not."
+        )
 
     def expire_offers(self) -> int:
         now = datetime.now(timezone.utc)
@@ -267,7 +295,12 @@ class ExpertRequestService:
         if data.status == RequestStatus.COMPLETED:
             self.db.commit()
             farmer = self.farmers.get_by_id(request.farmer_id)
-            self.sms.send_sms(farmer.phone_number, f"Your expert request {request.request_code} is marked complete. Reply SOLVED {request.request_code} or UNSOLVED {request.request_code}.")
+            self.sms.send_sms(
+                farmer.phone_number,
+                f"Your expert request {request.request_code} is marked complete.\n"
+                f"Was your issue resolved?\n"
+                f"Reply SOLVED {request.request_code} if yes, or UNSOLVED {request.request_code} if not."
+            )
         elif data.status == RequestStatus.UNASSIGNED:
             self.db.commit()
             self.offer_next(request.id)

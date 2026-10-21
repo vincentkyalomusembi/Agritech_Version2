@@ -174,32 +174,11 @@ def _sentence(text, limit: int) -> str:
     return first
 
 
-def format_recommendation_sms(card: dict, max_chars: int = 160) -> list[str]:
-    """Short plain-language SMS; the website shows the full card."""
-    primary = card["primary"]
-    name = f"{primary.get('crop') or primary.get('livestock')} ({primary['name']})"
-    why = _sentence(card.get("why_fit"), 90)
-    messages = [f"Best choice for your farm: {name}." + (f" {why}." if why else "")]
-    others = [entry.get("crop") or entry.get("livestock") for entry in card.get("alternatives", [])]
-    extras = []
-    if any(others):
-        extras.append(f"Other options: {', '.join(o for o in others if o)}.")
-    if card.get("planting_window"):
-        extras.append(f"Plant: {card['planting_window']}.")
-    tip = (card.get("actions") or [None])[0]
-    if tip:
-        extras.append(f"Tip: {_sentence(tip, 80)}.")
-    if extras:
-        messages.append(" ".join(extras))
-    vendors = card.get("vendors") or []
-    if vendors:
-        vendor = vendors[0]
-        price = f" at KES {vendor['price_kes']}/{vendor.get('unit') or 'unit'}" if vendor.get("price_kes") is not None else ""
-        messages.append(f"Buy from {vendor['name']}{price}. Call to confirm stock.")
-    else:
-        messages.append("No priced seller found near you yet.")
+def _sms_segments(messages: list[str], max_chars: int = 160) -> list[str]:
+    """Split each message into <=max_chars segments, then number them if >1 total."""
     segments = []
     for message in messages:
+        message = " ".join(message.split())
         while message:
             cut = min(max_chars, len(message))
             if cut < len(message) and " " in message[:cut]:
@@ -212,3 +191,68 @@ def format_recommendation_sms(card: dict, max_chars: int = 160) -> list[str]:
         count = len(segments)
         segments = [f"({i}/{count}) {part}"[:max_chars] for i, part in enumerate(segments, 1)]
     return segments
+
+
+def format_recommendation_sms(card: dict, max_chars: int = 160) -> list[str]:
+    """
+    Compose a structured, human-readable SMS for a recommendation card.
+    Produces up to 4 logical messages that are split and numbered if needed.
+    """
+    primary = card["primary"]
+    kind_label = primary.get("crop") or primary.get("livestock") or "Variety"
+    variety_name = primary["name"]
+    why = _sentence(card.get("why_fit"), 120)
+
+    # --- Message 1: headline + why it fits ---
+    headline = f"AgriTech Recommendation: {kind_label} - {variety_name}."
+    if why:
+        headline += f" Why: {why}."
+    messages = [headline]
+
+    # --- Message 2: maturity, planting window, spacing, first action ---
+    details = []
+    mat_min = primary.get("maturity_days_min")
+    mat_max = primary.get("maturity_days_max")
+    if mat_min and mat_max:
+        details.append(f"Matures in {mat_min}-{mat_max} days.")
+    elif mat_min:
+        details.append(f"Matures in ~{mat_min} days.")
+    if card.get("planting_window"):
+        details.append(f"Plant: {card['planting_window']}.")
+    if card.get("spacing"):
+        details.append(f"Spacing: {card['spacing']}.")
+    actions = card.get("actions") or []
+    if actions:
+        details.append(f"Step 1: {_sentence(actions[0], 80)}.")
+    if details:
+        messages.append(" ".join(details))
+
+    # --- Message 3: remaining actions + alternatives ---
+    extras = []
+    for i, action in enumerate(actions[1:3], start=2):
+        extras.append(f"Step {i}: {_sentence(action, 70)}.")
+    alt_names = [e.get("name") for e in card.get("alternatives", []) if e.get("name")]
+    alt_kinds = [e.get("crop") or e.get("livestock") for e in card.get("alternatives", [])]
+    alt_labels = [
+        f"{k} ({n})" if k and k.lower() != (n or "").lower() else n
+        for k, n in zip(alt_kinds, alt_names) if n
+    ]
+    if alt_labels:
+        extras.append(f"Alternatives: {', '.join(alt_labels)}.")
+    if extras:
+        messages.append(" ".join(extras))
+
+    # --- Message 4: nearest vendor or no-stock notice ---
+    vendors = card.get("vendors") or []
+    if vendors:
+        vendor = vendors[0]
+        price_str = f" KES {vendor['price_kes']}/{vendor.get('unit') or 'unit'}" if vendor.get("price_kes") is not None else ""
+        dist_str = f" (~{vendor['distance_km']:.0f}km away)" if vendor.get("distance_km") is not None else ""
+        phone_str = f" Call {vendor['phone']}" if vendor.get("phone") else ""
+        messages.append(
+            f"Buy seeds: {vendor['name']}{dist_str},{price_str}.{phone_str} Call ahead to confirm stock."
+        )
+    else:
+        messages.append("No verified seed seller found near you yet. Check with your local agro-dealer.")
+
+    return _sms_segments(messages, max_chars)
