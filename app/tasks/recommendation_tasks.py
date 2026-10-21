@@ -347,6 +347,7 @@ def run_profile_update(self, session_id: str, farmer_id: str, phone: str):
                 else:
                     farmer.sub_county, farmer.ward = constituency.name, ward.name
                     farmer.constituency_id, farmer.ward_id = constituency.id, ward.id
+                    farmer.profile_complete = True
                     farmer_repo.update(farmer)
                     msg = f"Location updated: {constituency.name}, {ward.name}."
         elif action == "add_crop":

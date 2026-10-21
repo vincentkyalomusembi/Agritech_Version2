@@ -64,6 +64,10 @@ class SMSHandler:
 
         # ── Profile completion (new farmers only) ────────────────────
         if not farmer.profile_complete:
+            active_profile = self.session_repo.get_active_by_farmer_and_type(farmer.id, SessionType.PROFILE_UPDATE)
+            if active_profile is not None:
+                self._process_reply(active_profile, farmer, phone, text, message_id)
+                return
             if farmer.full_name == "New Farmer":
                 # Step 1: awaiting name — accept any text as their name
                 self._handle_name_update(phone, farmer, text)
@@ -211,7 +215,8 @@ class SMSHandler:
 
         self.sms.send_sms(
             phone,
-            f"Thank you {farmer.full_name}. We are preparing your {session.session_type.value.replace('_', ' ')}. You will receive it within 5 minutes.",
+            f"Thank you {farmer.full_name}. We are preparing your {session.session_type.value.replace('_', ' ')}. "
+            "You will receive it as soon as it is ready.",
         )
 
         task_map = {
@@ -223,7 +228,12 @@ class SMSHandler:
         }
         task = task_map.get(service_key)
         if task:
-            task.delay(session_id, farmer_id, phone)
+            # Execute recommendation work in the webhook background task so a
+            # missing or delayed Celery worker cannot strand the farmer.
+            if service_key in {"crop_recommendation", "livestock_recommendation"}:
+                task.apply(args=[session_id, farmer_id, phone], throw=False)
+            else:
+                task.delay(session_id, farmer_id, phone)
 
     def _handle_subscription_confirmation(self, session, farmer, phone: str, confirmed: str) -> None:
         if confirmed == "No":
@@ -404,10 +414,17 @@ class SMSHandler:
         farmer.ward_id = None
         farmer.latitude = None
         farmer.longitude = None
-        farmer.profile_complete = True
+        farmer.profile_complete = False
         self.farmer_repo.update(farmer)
+        session = self.session_service.start_session(
+            farmer.id,
+            SessionType.PROFILE_UPDATE,
+            current_step=1,
+            session_data={"action": "sub_county_ward"},
+        )
         self.sms.send_sms(
             phone,
-            f"Profile complete! Welcome {farmer.full_name}, {county.name}.\n"
-            "Dial *384# to access all services.",
+            f"Thanks {farmer.full_name}. County saved as {county.name}.\n"
+            "Now reply with your sub-county/constituency and ward separated by a comma, "
+            "for example: Kikuyu, Muguga.",
         )

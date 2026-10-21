@@ -95,7 +95,10 @@ class ExpertRequestService:
         ).all()
         already_offered = {offer.expert_id for offer in self.db.query(ExpertOffer).filter_by(request_id=request.id).all()}
         candidates = [expert for expert in candidates if expert.id not in already_offered]
-        candidates.sort(key=lambda expert: self._score(expert, request, farmer), reverse=True)
+        # Score candidates once per request. Repeating the database-heavy score
+        # query during sort and offer creation can stall request processing.
+        scored_candidates = [(expert, self._score(expert, request, farmer)) for expert in candidates]
+        scored_candidates.sort(key=lambda item: item[1], reverse=True)
         if not candidates:
             request.expert_id = None
             request.status = RequestStatus.ESCALATED
@@ -103,11 +106,11 @@ class ExpertRequestService:
             self.sms.send_sms(farmer.phone_number, f"Request {request.request_code}: no expert has accepted yet. Your request is escalated to our support team.")
             return request
 
-        expert = candidates[0]
+        expert, score = scored_candidates[0]
         offer = ExpertOffer(
             request_id=request.id,
             expert_id=expert.id,
-            score=self._score(expert, request, farmer),
+            score=score,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=OFFER_TIMEOUT_MINUTES),
         )
         request.expert_id = expert.id

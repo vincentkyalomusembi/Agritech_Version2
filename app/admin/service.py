@@ -30,6 +30,7 @@ from app.staff.model import StaffRole, StaffUser
 from app.staff.repository import StaffRepository
 from app.staff.schema import StaffResponse
 from app.staff.security import hash_password
+from app.auth.model import WebRole, WebUser
 from app.subscriptions.model import Subscription
 from app.admin.schema import (
     AdminExpertCreate,
@@ -384,6 +385,16 @@ class AdminService:
         self.db.add(expert)
         self.db.commit()
         self.db.refresh(expert)
+        if self.db.query(WebUser).filter(WebUser.phone_number == expert.phone_number).first() is None:
+            self.db.add(WebUser(
+                id=expert.id,
+                role=WebRole.EXPERT,
+                full_name=expert.full_name,
+                phone_number=expert.phone_number,
+                expert_id=expert.id,
+                is_active=True,
+            ))
+            self.db.commit()
         write_audit(
             self.db,
             action="expert.create",
@@ -431,6 +442,16 @@ class AdminService:
             self.db.flush()
             staff.expert_id = expert.id
             self.db.add(staff)
+            self.db.add(WebUser(
+                id=expert.id,
+                role=WebRole.EXPERT,
+                full_name=expert.full_name,
+                phone_number=phone,
+                email=payload.email,
+                password_hash=hash_password(payload.password),
+                expert_id=expert.id,
+                is_active=True,
+            ))
             self.db.commit()
             self.db.refresh(expert)
             self.db.refresh(staff)

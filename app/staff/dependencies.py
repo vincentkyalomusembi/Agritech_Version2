@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_farmer
 from app.auth.model import WebRole, WebUser
 from app.auth.security import decode_access_token
-from app.core.config import settings
 from app.database.sessions import get_db
 from app.farmers.model import Farmer
 from app.staff.model import StaffRole, StaffUser
@@ -17,21 +16,6 @@ from app.staff.security import decode_staff_token
 
 staff_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/staff/login")
 optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=True)
-
-
-def _configured_admin_ids() -> set[str]:
-    return {
-        value.strip()
-        for value in settings.ADMIN_FARMER_IDS.split(",")
-        if value.strip()
-    }
-
-
-def is_admin_farmer(farmer: Farmer) -> bool:
-    try:
-        return str(UUID(str(farmer.id))) in _configured_admin_ids()
-    except ValueError:
-        return False
 
 
 def get_current_staff(
@@ -105,15 +89,6 @@ def require_admin_or_staff(
         identity = db.query(WebUser).filter(WebUser.id == identity_id, WebUser.is_active.is_(True)).first()
         if identity and identity.role == WebRole.ADMIN:
             return identity
-    except JWTError:
-        pass
-
-    try:
-        payload = decode_access_token(token)
-        farmer_id = payload.get("sub")
-        farmer = db.query(Farmer).filter(Farmer.id == farmer_id).first()
-        if farmer and farmer.is_active and is_admin_farmer(farmer):
-            return farmer
     except JWTError:
         pass
 

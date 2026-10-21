@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.model import WebRole, WebUser
 from app.auth.security import decode_access_token
-from app.core.config import settings
 from app.database.sessions import get_db
 from app.farmers.model import Farmer
+from app.experts.model import Expert
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/auth/login",
@@ -78,7 +78,7 @@ def get_current_web_user(
 def require_admin(
     current_user: WebUser = Depends(get_current_web_user),
 ) -> WebUser:
-    """Require the shared admin role; ADMIN_FARMER_IDS is not authorization."""
+    """Require the shared admin role."""
     if current_user.role != WebRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -86,3 +86,15 @@ def require_admin(
         )
 
     return current_user
+
+
+def get_current_expert(
+    current_user: WebUser = Depends(get_current_web_user),
+    db: Session = Depends(get_db),
+) -> Expert:
+    if current_user.role != WebRole.EXPERT or current_user.expert_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Expert access required.")
+    expert = db.query(Expert).filter(Expert.id == current_user.expert_id).first()
+    if expert is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Expert profile not found.")
+    return expert

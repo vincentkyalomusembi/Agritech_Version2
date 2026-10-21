@@ -72,6 +72,7 @@ def seed_experts(db: Session):
             county_id=county.id,
             organization=f"{county.name} County Agriculture Office",
             is_available=True,
+            contact_verified=True,
         )
 
         veterinary_officer = Expert(
@@ -81,6 +82,7 @@ def seed_experts(db: Session):
             county_id=county.id,
             organization=f"{county.name} County Veterinary Office",
             is_available=True,
+            contact_verified=True,
         )
 
         experts.append(agriculture_officer)
