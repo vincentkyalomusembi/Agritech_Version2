@@ -5,6 +5,7 @@ from google import genai
 from app.ai.prompts import LEGACY_SYSTEM_PROMPT, SYSTEM_PROMPT
 from app.core.config import settings
 import json
+import re
 
 
 def build_text_prompt(context: dict) -> str:
@@ -85,3 +86,46 @@ class GeminiService:
         if not response.text:
             raise RuntimeError("Gemini returned an empty structured response.")
         return json.loads(response.text)
+
+    def find_vendors(self, item: str, kind: str, county: str, sub_county: str | None = None,
+                     ward: str | None = None, limit: int = 3) -> list[dict]:
+        """Find real sellers near the farmer using Gemini with Google Search grounding.
+
+        Search grounding cannot be combined with JSON-mode output, so the model
+        is asked for a JSON array in plain text and the result is validated here.
+        """
+        from google.genai import types
+
+        place = ", ".join(part for part in (ward, sub_county, county + " County", "Kenya") if part)
+        product = "seed or seedlings" if kind == "crop" else "animals or breeding stock"
+        prompt = (
+            f"Find up to {limit} real agrovets, seed companies or breeders in or near {place} that sell "
+            f"{product} for: {item}. Use only what you find in search results. Never invent a business, "
+            "phone number or price; use null for anything you did not find. Return ONLY a JSON array of "
+            'objects with keys: name (string), phone (string|null), address (string|null), '
+            'price_kes (number|null), unit (string|null), source_url (string|null).'
+        )
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())]),
+        )
+        match = re.search(r"\[.*\]", response.text or "", re.S)
+        if not match:
+            return []
+        vendors = []
+        for row in json.loads(match.group(0)):
+            name = str(row.get("name") or "").strip()
+            if not name:
+                continue
+            phone = re.sub(r"[^\d+]", "", str(row.get("phone") or "")) or None
+            price = row.get("price_kes")
+            vendors.append({
+                "name": name[:120], "phone": phone if phone and len(phone) >= 9 else None,
+                "address": (str(row["address"])[:200] if row.get("address") else None),
+                "county": county,
+                "price_kes": float(price) if isinstance(price, (int, float)) and price > 0 else None,
+                "unit": (str(row["unit"])[:40] if row.get("unit") else None),
+                "source_url": row.get("source_url"), "distance_km": None, "stock_quantity": None,
+            })
+        return vendors[:limit]

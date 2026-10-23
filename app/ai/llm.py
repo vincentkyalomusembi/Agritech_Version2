@@ -67,3 +67,10 @@ class LLMRouter:
 
     def generate_structured_recommendation(self, context: dict) -> dict:
         return self._call("generate_structured_recommendation", context)
+
+    def find_vendors(self, **kwargs) -> list[dict]:
+        """Vendor lookup needs Google Search grounding, which only Gemini provides."""
+        from app.core.config import settings
+        if not settings.GEMINI_API_KEY:
+            return []
+        return GeminiService().find_vendors(**kwargs)
