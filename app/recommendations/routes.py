@@ -135,3 +135,16 @@ def send_recommendation_sms(
     if result.get("status") == "error":
         raise HTTPException(status_code=502, detail=result.get("reason", "SMS submission failed"))
     return result
+
+
+@router.delete("/{recommendation_id}", status_code=204)
+def delete_recommendation(
+    recommendation_id: UUID,
+    current_farmer: Farmer = Depends(get_current_farmer),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete a saved recommendation owned by the signed-in farmer."""
+    row = RecommendationRepository(db).get_by_id(recommendation_id)
+    if row is None or row.farmer_id != current_farmer.id:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    RecommendationRepository(db).delete(recommendation_id)

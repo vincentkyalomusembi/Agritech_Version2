@@ -64,3 +64,14 @@ class RecommendationRepository:
             .limit(limit)
             .all()
         )
+
+    def delete(self, recommendation_id: UUID) -> bool:
+        """
+        Delete a recommendation by ID. Returns True if a row was deleted.
+        """
+        row = self.get_by_id(recommendation_id)
+        if row is None:
+            return False
+        self.db.delete(row)
+        self.db.commit()
+        return True
